@@ -6,7 +6,13 @@
  * persists what it is handed.
  */
 
-import { createContext, useCallback, useContext, useState } from "react";
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useRef,
+  useState,
+} from "react";
 
 import {
   addComment as addCommentTo,
@@ -44,18 +50,29 @@ async function persist(state: ReviewState): Promise<void> {
 export function useReviewState(initial: ReviewState): ReviewApi {
   const [state, setState] = useState<ReviewState>(initial);
   const [error, setError] = useState<string | null>(null);
+  // The latest state, readable synchronously. `state` is one render behind
+  // during a burst of clicks, and each POST has to carry the newest value.
+  const latest = useRef(initial);
+  // Posts are chained rather than fired in parallel: the endpoint replaces the
+  // whole state, so two in flight at once could land out of order and persist
+  // the older one over the newer.
+  const pending = useRef<Promise<void>>(Promise.resolve());
 
   const apply = useCallback(
     (next: (current: ReviewState) => ReviewState) => {
-      setState((current) => {
-        const updated = next(current);
-        if (updated === current) return current;
-        persist(updated).then(
+      const updated = next(latest.current);
+      if (updated === latest.current) return;
+      latest.current = updated;
+      setState(updated);
+      // Deliberately outside the updater: React may call an updater twice (it
+      // does in StrictMode) or discard its result, and a network write must
+      // happen exactly once per mutation.
+      pending.current = pending.current
+        .then(() => persist(updated))
+        .then(
           () => setError(null),
           (cause: unknown) => setError(String(cause)),
         );
-        return updated;
-      });
     },
     [],
   );

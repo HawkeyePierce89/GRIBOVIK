@@ -46,17 +46,6 @@ pub enum Blob {
     NonUtf8,
 }
 
-impl Blob {
-    /// The source text, if there is any; `Missing` and `NonUtf8` both yield
-    /// `None`.
-    pub fn into_text(self) -> Option<String> {
-        match self {
-            Blob::Text(text) => Some(text),
-            Blob::Missing | Blob::NonUtf8 => None,
-        }
-    }
-}
-
 impl Repo {
     /// Find the worktree root containing `cwd`.
     pub fn discover(cwd: impl AsRef<Path>) -> Result<Self> {
@@ -80,6 +69,29 @@ impl Repo {
     /// The absolute worktree root.
     pub fn root(&self) -> &Path {
         &self.root
+    }
+
+    /// The directory git keeps its own data in — where review state belongs.
+    ///
+    /// This is *not* always `<root>/.git`: in a linked worktree or a submodule
+    /// that name is a file pointing elsewhere. Asking git for the common dir
+    /// also means every worktree of a repository shares one review, which is
+    /// what a reviewer expects from a state keyed on a revision range.
+    pub fn git_dir(&self) -> Result<PathBuf> {
+        let out = self.git(&["rev-parse", "--git-common-dir"])?;
+        if !out.status.success() {
+            bail!(
+                "could not locate the git directory: {}",
+                stderr_string(&out)
+            );
+        }
+        let dir = PathBuf::from(stdout_string(&out)?.trim());
+        // `--git-common-dir` answers relative to the worktree root when it can.
+        Ok(if dir.is_absolute() {
+            dir
+        } else {
+            self.root.join(dir)
+        })
     }
 
     /// Whether `rev` names a commit in this repository.
@@ -132,7 +144,9 @@ impl Repo {
 
     /// Every path that differs between `base` and `head`.
     pub fn changed_files(&self, base: &str, head: &str) -> Result<Vec<ChangedFile>> {
-        let out = self.git(&["diff", "--name-status", "-z", base, head])?;
+        // `--` keeps a revision that begins with a dash from reaching git as an
+        // option, however it got as far as here.
+        let out = self.git(&["diff", "--name-status", "-z", base, head, "--"])?;
         if !out.status.success() {
             bail!("git diff {base}..{head} failed: {}", stderr_string(&out));
         }
@@ -158,21 +172,6 @@ impl Repo {
         }
     }
 
-    /// Read `path` at `rev` as source text, recording a warning when a blob is
-    /// skipped because it is not UTF-8.
-    pub fn blob_text(
-        &self,
-        rev: &str,
-        path: &str,
-        warnings: &mut Vec<String>,
-    ) -> Result<Option<String>> {
-        let blob = self.blob(rev, path)?;
-        if blob == Blob::NonUtf8 {
-            warnings.push(format!("skipped non-UTF-8 file {path} at {rev}"));
-        }
-        Ok(blob.into_text())
-    }
-
     fn git(&self, args: &[&str]) -> Result<Output> {
         run_git(&self.root, args)
     }
@@ -182,6 +181,11 @@ fn run_git(dir: &Path, args: &[&str]) -> Result<Output> {
     Command::new("git")
         .arg("-C")
         .arg(dir)
+        // `blob` reads git's diagnostics to tell "not in that tree" from a real
+        // failure, and a git built with NLS translates them. Pin the locale so
+        // the messages we match are the ones git's own source spells out.
+        .env("LC_ALL", "C")
+        .env("LANGUAGE", "")
         .args(args)
         .output()
         .with_context(|| format!("failed to run `git {}` (is git installed?)", args.join(" ")))
@@ -240,6 +244,9 @@ fn parse_name_status(raw: &str) -> Result<Vec<ChangedFile>> {
                     status: FileStatus::Added,
                 });
             }
+            // Only emitted when the reviewer's git config sets
+            // `diff.renames = copies`; the source is already reviewed under its
+            // own path, so only the new copy is a change.
             'C' => {
                 let _source = next_path()?;
                 changed.push(ChangedFile {
@@ -333,15 +340,5 @@ mod tests {
     #[test]
     fn a_status_without_a_path_is_an_error() {
         assert!(parse_name_status("M\0").is_err());
-    }
-
-    #[test]
-    fn blob_into_text_keeps_only_readable_sources() {
-        assert_eq!(
-            Blob::Text("fn main() {}".to_string()).into_text(),
-            Some("fn main() {}".to_string())
-        );
-        assert_eq!(Blob::Missing.into_text(), None);
-        assert_eq!(Blob::NonUtf8.into_text(), None);
     }
 }

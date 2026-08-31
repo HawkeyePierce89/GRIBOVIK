@@ -74,7 +74,7 @@ pub fn prepare(repo: &Repo, args: &Args) -> Result<Session> {
         Analysis::Graph(snapshot) => *snapshot,
     };
 
-    let state_path = review::state_path(repo.root(), &snapshot.meta.base, &snapshot.meta.head);
+    let state_path = review::state_path(repo.git_dir()?, &snapshot.meta.base, &snapshot.meta.head);
     let state = review::load(&state_path);
     let assets = Assets::new(args.assets.clone());
 

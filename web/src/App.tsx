@@ -17,7 +17,7 @@ import {
   type Edge,
   type NodeTypes,
 } from "@xyflow/react";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 import "@xyflow/react/dist/style.css";
 
@@ -25,6 +25,7 @@ import { ProgressPanel } from "./components/ProgressPanel";
 import { SymbolNode } from "./components/SymbolNode";
 import { ReviewContext, useReviewState } from "./hooks/useReviewState";
 import { layout } from "./lib/layout";
+import { nodeIdsWithStatus } from "./lib/review";
 import { toFlow, type SymbolFlowNode } from "./lib/transform";
 import type { GraphSnapshot, ReviewState, Status } from "./types/snapshot";
 
@@ -89,21 +90,21 @@ function Graph({ loaded }: { loaded: Loaded }) {
   const review = useReviewState(loaded.initialState);
 
   const [selected, setSelected] = useState<Status | null>(null);
-  const [highlighted, setHighlighted] = useState<ReadonlySet<string>>(
-    () => new Set<string>(),
-  );
 
   const nodeIds = useMemo(
     () => loaded.snapshot.nodes.map((node) => node.id),
     [loaded.snapshot],
   );
 
-  // Each selection replaces the previous one, so the old highlight clears
-  // without a separate reset step.
-  const onSelect = useCallback((status: Status | null, ids: string[]) => {
-    setSelected(status);
-    setHighlighted(new Set(ids));
-  }, []);
+  // Derived rather than captured at click time, so marking a card while a
+  // status is highlighted moves it in or out of the highlight immediately.
+  const highlighted = useMemo<ReadonlySet<string>>(
+    () =>
+      selected === null
+        ? new Set<string>()
+        : new Set(nodeIdsWithStatus(review.state, nodeIds, selected)),
+    [selected, review.state, nodeIds],
+  );
 
   const context = useMemo(
     () => ({ ...review, highlighted }),
@@ -119,7 +120,7 @@ function Graph({ loaded }: { loaded: Loaded }) {
           state={review.state}
           nodeIds={nodeIds}
           selected={selected}
-          onSelect={onSelect}
+          onSelect={setSelected}
         />
 
         <main className="canvas">

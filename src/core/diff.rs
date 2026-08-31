@@ -1,17 +1,14 @@
 //! Line-level diffing.
 //!
 //! Produces the raw material every later stage consumes: a flat list of
-//! [`DiffLine`]s carrying both sides' line numbers, the [`Hunk`]s those lines
-//! group into, and a way to slice the file diff down to one symbol's span.
+//! [`DiffLine`]s carrying both sides' line numbers, and a way to slice the file
+//! diff down to one symbol's span.
 
 use similar::{ChangeTag, TextDiff};
 
 use crate::core::snapshot::{DiffLine, DiffTag};
 
 /// A half-open span of 1-based line numbers: `start` is included, `end` is not.
-///
-/// The half-open form is what lets a hunk express "nothing was removed here" as
-/// a zero-length range sitting at the insertion point.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct LineRange {
     pub start: u32,
@@ -32,46 +29,9 @@ impl LineRange {
         }
     }
 
-    /// A zero-length range marking the position before `line`.
-    pub fn empty_at(line: u32) -> Self {
-        Self {
-            start: line,
-            end: line,
-        }
-    }
-
-    pub fn is_empty(&self) -> bool {
-        self.end <= self.start
-    }
-
     pub fn contains(&self, line: u32) -> bool {
         self.start <= line && line < self.end
     }
-
-    /// Whether the two spans touch.
-    ///
-    /// Zero-length ranges are positions *between* lines rather than spans, so
-    /// they count as touching whenever that position falls within the other
-    /// range — otherwise a pure insertion inside a symbol would look disjoint
-    /// from it on the old side.
-    pub fn intersects(&self, other: &LineRange) -> bool {
-        if self.is_empty() || other.is_empty() {
-            let (point, span) = if self.is_empty() {
-                (self, other)
-            } else {
-                (other, self)
-            };
-            return span.start <= point.start && point.start <= span.end;
-        }
-        self.start < other.end && other.start < self.end
-    }
-}
-
-/// A run of consecutive changed lines, located on both sides.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct Hunk {
-    pub old_range: LineRange,
-    pub new_range: LineRange,
 }
 
 /// Diff `old` against `new`, emitting one [`DiffLine`] per line of the result.
@@ -96,51 +56,6 @@ pub fn line_diff(old: &str, new: &str) -> Vec<DiffLine> {
             }
         })
         .collect()
-}
-
-/// Group consecutive non-context lines into hunks.
-///
-/// A hunk that only adds lines gets a zero-length `old_range` at the position
-/// the lines were inserted, and vice versa for a pure deletion.
-pub fn hunks(diff: &[DiffLine]) -> Vec<Hunk> {
-    let mut hunks = Vec::new();
-    // Where the next line on each side would land, so a hunk that touches only
-    // one side still knows its position on the other.
-    let mut old_cursor = 1;
-    let mut new_cursor = 1;
-    let mut open: Option<Hunk> = None;
-
-    for line in diff {
-        match line.tag {
-            DiffTag::Context => {
-                if let Some(hunk) = open.take() {
-                    hunks.push(hunk);
-                }
-            }
-            _ => {
-                let hunk = open.get_or_insert(Hunk {
-                    old_range: LineRange::empty_at(old_cursor),
-                    new_range: LineRange::empty_at(new_cursor),
-                });
-                if let Some(old) = line.old_line {
-                    hunk.old_range.end = old + 1;
-                }
-                if let Some(new) = line.new_line {
-                    hunk.new_range.end = new + 1;
-                }
-            }
-        }
-        if let Some(old) = line.old_line {
-            old_cursor = old + 1;
-        }
-        if let Some(new) = line.new_line {
-            new_cursor = new + 1;
-        }
-    }
-    if let Some(hunk) = open {
-        hunks.push(hunk);
-    }
-    hunks
 }
 
 /// Select the diff lines belonging to a symbol's span.
@@ -189,18 +104,6 @@ mod tests {
             .collect()
     }
 
-    fn ranges(hunks: &[Hunk]) -> Vec<((u32, u32), (u32, u32))> {
-        hunks
-            .iter()
-            .map(|h| {
-                (
-                    (h.old_range.start, h.old_range.end),
-                    (h.new_range.start, h.new_range.end),
-                )
-            })
-            .collect()
-    }
-
     #[test]
     fn pure_insertion_numbers_both_sides() {
         let diff = line_diff("a\nb\nc\n", "a\nb\nX\nY\nc\n");
@@ -214,9 +117,6 @@ mod tests {
                 ("context", Some(3), Some(5), "c"),
             ]
         );
-        // Nothing was removed, so the old side is a zero-length range parked at
-        // the line the insertion happened before.
-        assert_eq!(ranges(&hunks(&diff)), vec![((3, 3), (3, 5))]);
     }
 
     #[test]
@@ -231,7 +131,6 @@ mod tests {
                 ("context", Some(4), Some(2), "d"),
             ]
         );
-        assert_eq!(ranges(&hunks(&diff)), vec![((2, 4), (2, 2))]);
     }
 
     #[test]
@@ -246,11 +145,10 @@ mod tests {
                 ("context", Some(3), Some(3), "c"),
             ]
         );
-        assert_eq!(ranges(&hunks(&diff)), vec![((2, 3), (2, 3))]);
     }
 
     #[test]
-    fn whole_file_rewrite_is_one_hunk() {
+    fn whole_file_rewrite_replaces_every_line() {
         let diff = line_diff("a\nb\n", "x\ny\n");
         assert_eq!(
             render(&diff),
@@ -261,7 +159,6 @@ mod tests {
                 ("add", None, Some(2), "y"),
             ]
         );
-        assert_eq!(ranges(&hunks(&diff)), vec![((1, 3), (1, 3))]);
     }
 
     #[test]
@@ -271,7 +168,6 @@ mod tests {
             render(&diff),
             vec![("add", None, Some(1), "a"), ("add", None, Some(2), "b")]
         );
-        assert_eq!(ranges(&hunks(&diff)), vec![((1, 1), (1, 3))]);
     }
 
     #[test]
@@ -281,23 +177,12 @@ mod tests {
             render(&diff),
             vec![("del", Some(1), None, "a"), ("del", Some(2), None, "b")]
         );
-        assert_eq!(ranges(&hunks(&diff)), vec![((1, 3), (1, 1))]);
     }
 
     #[test]
-    fn identical_sources_produce_no_hunks() {
+    fn identical_sources_are_all_context() {
         let diff = line_diff("a\nb\n", "a\nb\n");
         assert!(diff.iter().all(|l| l.tag == DiffTag::Context));
-        assert!(hunks(&diff).is_empty());
-    }
-
-    #[test]
-    fn context_lines_split_hunks() {
-        let diff = line_diff("a\nb\nc\nd\ne\n", "A\nb\nc\nd\nE\n");
-        assert_eq!(
-            ranges(&hunks(&diff)),
-            vec![((1, 2), (1, 2)), ((5, 6), (5, 6))]
-        );
     }
 
     #[test]
@@ -386,29 +271,5 @@ mod tests {
         assert!(range.contains(4));
         assert!(range.contains(6));
         assert!(!range.contains(7));
-        assert!(!range.is_empty());
-    }
-
-    #[test]
-    fn zero_length_ranges_touch_the_span_they_sit_in() {
-        let body = LineRange::inclusive(10, 20);
-        // A pure insertion inside the body reports an empty old range there.
-        assert!(LineRange::empty_at(15).intersects(&body));
-        assert!(body.intersects(&LineRange::empty_at(15)));
-        // Boundaries count: inserting right before the first line, or right
-        // after the last, still belongs to the symbol.
-        assert!(LineRange::empty_at(10).intersects(&body));
-        assert!(LineRange::empty_at(21).intersects(&body));
-        assert!(!LineRange::empty_at(9).intersects(&body));
-        assert!(!LineRange::empty_at(22).intersects(&body));
-    }
-
-    #[test]
-    fn non_empty_ranges_intersect_on_overlap_only() {
-        let body = LineRange::inclusive(10, 20);
-        assert!(body.intersects(&LineRange::inclusive(20, 30)));
-        assert!(body.intersects(&LineRange::inclusive(1, 10)));
-        assert!(!body.intersects(&LineRange::inclusive(21, 30)));
-        assert!(!body.intersects(&LineRange::inclusive(1, 9)));
     }
 }

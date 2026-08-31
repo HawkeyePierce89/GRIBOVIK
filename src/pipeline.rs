@@ -37,14 +37,6 @@ impl Analysis {
         }
     }
 
-    /// Consume the analysis, yielding its snapshot when there is one.
-    pub fn into_snapshot(self) -> Option<GraphSnapshot> {
-        match self {
-            Analysis::Graph(snapshot) => Some(*snapshot),
-            Analysis::NoChanges { .. } => None,
-        }
-    }
-
     /// The revision range that was analyzed, whatever the outcome.
     pub fn range(&self) -> (&str, &str) {
         match self {
@@ -173,7 +165,7 @@ mod tests {
 
         assert_eq!(analysis.range(), ("aaa", "feature"));
         assert_eq!(analysis.snapshot().unwrap().nodes.len(), 1);
-        assert_eq!(analysis.into_snapshot().unwrap().nodes.len(), 1);
+        assert_eq!(analysis.snapshot().unwrap().nodes.len(), 1);
     }
 
     #[test]
@@ -184,6 +176,6 @@ mod tests {
         };
         assert_eq!(analysis.range(), ("aaa", "feature"));
         assert!(analysis.snapshot().is_none());
-        assert!(analysis.into_snapshot().is_none());
+        assert!(analysis.snapshot().is_none());
     }
 }

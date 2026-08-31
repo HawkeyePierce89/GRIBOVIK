@@ -2,10 +2,13 @@
  * Review progress, and a way to find what is left.
  *
  * Clicking a counter highlights exactly the nodes in that status and clears
- * the previous highlight; clicking the active counter again clears it.
+ * the previous highlight; clicking the active counter again clears it. The
+ * panel only reports *which* status is wanted — the set of ids is derived from
+ * the live review state, so a card approved while "Pending" is showing drops
+ * out of the highlight instead of staying lit.
  */
 
-import { countStatuses, nodeIdsWithStatus } from "../lib/review";
+import { countStatuses } from "../lib/review";
 import type { ReviewState, Status } from "../types/snapshot";
 
 const STATUSES: Status[] = ["approved", "rejected", "pending"];
@@ -22,7 +25,7 @@ export type ProgressPanelProps = {
   nodeIds: string[];
   /** Which counter is active, or `null` when nothing is highlighted. */
   selected: Status | null;
-  onSelect: (status: Status | null, ids: string[]) => void;
+  onSelect: (status: Status | null) => void;
 };
 
 export function ProgressPanel({
@@ -46,11 +49,7 @@ export function ProgressPanel({
               selected === status ? "active" : ""
             }`}
             aria-pressed={selected === status}
-            onClick={() =>
-              selected === status
-                ? onSelect(null, [])
-                : onSelect(status, nodeIdsWithStatus(state, nodeIds, status))
-            }
+            onClick={() => onSelect(selected === status ? null : status)}
           >
             <span className="counter-value">{counts[status]}</span>
             <span className="counter-label">{LABEL[status]}</span>

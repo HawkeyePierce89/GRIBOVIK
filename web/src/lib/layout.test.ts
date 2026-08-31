@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import type { GraphSnapshot } from "../types/snapshot";
-import { DEFAULT_NODE_WIDTH, layout } from "./layout";
+import { NODE_WIDTH, layout, nodeHeight } from "./layout";
 import { toFlow } from "./transform";
 
 function chain(): GraphSnapshot {
@@ -34,7 +34,7 @@ describe("layout", () => {
     const caller = placed.find((node) => node.id === "a::caller");
     const callee = placed.find((node) => node.id === "a::callee");
     expect(callee!.position.x).toBeGreaterThanOrEqual(
-      caller!.position.x + DEFAULT_NODE_WIDTH,
+      caller!.position.x + NODE_WIDTH,
     );
   });
 
@@ -47,18 +47,51 @@ describe("layout", () => {
     expect(placed[0]?.data).toEqual(nodes[0]?.data);
   });
 
-  it("honours measured sizes over the defaults", async () => {
-    const { nodes, edges } = toFlow(chain());
-
-    const placed = await layout(nodes, edges, {
-      "a::caller": { width: 900, height: 100 },
+  it("grows a card's height with its diff and caps it at the scroll height", () => {
+    const [node] = toFlow(chain()).nodes;
+    const withLines = (count: number) => ({
+      ...node!,
+      data: {
+        snapshot: {
+          ...node!.data.snapshot,
+          diff: Array.from({ length: count }, () => ({
+            tag: "add" as const,
+            old_line: null,
+            new_line: 1,
+            text: "x",
+          })),
+        },
+      },
     });
 
-    const caller = placed.find((node) => node.id === "a::caller");
-    const callee = placed.find((node) => node.id === "a::callee");
-    expect(callee!.position.x).toBeGreaterThanOrEqual(
-      caller!.position.x + 900,
-    );
+    const empty = nodeHeight(withLines(0));
+    expect(nodeHeight(withLines(5))).toBeGreaterThan(empty);
+    // `.diff` scrolls past its max height, so 200 lines is no taller than 50.
+    expect(nodeHeight(withLines(200))).toEqual(nodeHeight(withLines(50)));
+  });
+
+  it("stacks cards without overlapping, whatever their diffs", async () => {
+    const snapshot = chain();
+    snapshot.edges = [];
+    snapshot.nodes[0]!.diff = Array.from({ length: 40 }, () => ({
+      tag: "add" as const,
+      old_line: null,
+      new_line: 1,
+      text: "x",
+    }));
+    const { nodes, edges } = toFlow(snapshot);
+
+    const placed = await layout(nodes, edges);
+
+    // Unconnected cards share a column, so each one's box has to clear the box
+    // above it. A fixed height for every card is exactly what breaks this.
+    const column = [...placed].sort((a, b) => a.position.y - b.position.y);
+    for (let i = 1; i < column.length; i += 1) {
+      const above = column[i - 1]!;
+      expect(column[i]!.position.y).toBeGreaterThanOrEqual(
+        above.position.y + nodeHeight(above),
+      );
+    }
   });
 
   it("returns nothing for an empty graph", async () => {

@@ -13,8 +13,16 @@ import type {
   Status,
 } from "../types/snapshot";
 
-/** The verdict a node carries when the reviewer has not touched it. */
-export const PENDING: NodeReview = { status: "pending", comments: [] };
+/**
+ * The verdict a node carries when the reviewer has not touched it.
+ *
+ * Frozen because `reviewFor` hands this exact object out for every untouched
+ * node: mutating it in one place would change the default everywhere.
+ */
+export const PENDING: NodeReview = Object.freeze({
+  status: "pending",
+  comments: Object.freeze([]) as readonly Comment[] as Comment[],
+});
 
 /** How many nodes sit in each status; the three always sum to the node count. */
 export type StatusCounts = {

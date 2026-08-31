@@ -1,16 +1,18 @@
 //! Review state: what the reviewer decided about each node, on disk.
 //!
 //! State lives beside the repository it describes, under
-//! `.git/gribovik/<base>..<head>.json`, so it survives restarts of the CLI and
-//! disappears with the clone. This module is part of the I/O shell.
+//! `<git-dir>/gribovik/<base>..<head>.json`, so it survives restarts of the CLI
+//! and disappears with the clone. This module is part of the I/O shell.
 //!
 //! Reading is deliberately forgiving: a missing or unreadable file yields an
 //! empty state rather than an error, because losing a few approvals is a much
 //! smaller problem than refusing to start a review at all.
 
 use std::collections::BTreeMap;
+use std::ffi::OsStr;
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU64, Ordering};
 
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
@@ -50,14 +52,18 @@ pub struct Comment {
     pub created_at: String,
 }
 
-/// The state file for one revision range inside `repo_root`.
+/// The state file for one revision range, inside the repository's git
+/// directory.
+///
+/// `git_dir` comes from `Repo::git_dir` rather than being built as
+/// `<root>/.git`: in a linked worktree or a submodule that path is a file, and
+/// writing under it fails.
 ///
 /// Revision names go into the file name verbatim except for `/`, which would
 /// otherwise turn `origin/master..HEAD` into nested directories.
-pub fn state_path(repo_root: impl AsRef<Path>, base: &str, head: &str) -> PathBuf {
-    repo_root
+pub fn state_path(git_dir: impl AsRef<Path>, base: &str, head: &str) -> PathBuf {
+    git_dir
         .as_ref()
-        .join(".git")
         .join("gribovik")
         .join(format!("{}..{}.json", sanitize(base), sanitize(head)))
 }
@@ -101,8 +107,12 @@ pub fn save(path: impl AsRef<Path>, state: &ReviewState) -> Result<()> {
         .with_context(|| format!("review state path has no parent: {}", path.display()))?;
     fs::create_dir_all(dir).with_context(|| format!("could not create {}", dir.display()))?;
 
+    let name = path
+        .file_name()
+        .with_context(|| format!("review state path has no file name: {}", path.display()))?;
+
     let json = serde_json::to_string_pretty(state).context("could not serialize review state")?;
-    let temp = temp_path(path);
+    let temp = temp_path(dir, name);
     fs::write(&temp, json).with_context(|| format!("could not write {}", temp.display()))?;
     fs::rename(&temp, path).with_context(|| format!("could not write {}", path.display()))?;
     Ok(())
@@ -110,13 +120,18 @@ pub fn save(path: impl AsRef<Path>, state: &ReviewState) -> Result<()> {
 
 /// A sibling of `path` to stage the write in. It has to share a directory with
 /// the target for the rename to stay on one filesystem, and hence be atomic.
-fn temp_path(path: &Path) -> PathBuf {
-    let name = path
-        .file_name()
-        .map(|name| name.to_string_lossy().into_owned())
-        .unwrap_or_else(|| "state.json".to_string());
-    let dir = path.parent().unwrap_or_else(|| Path::new("."));
-    dir.join(format!(".{name}.{}.tmp", std::process::id()))
+///
+/// The counter matters as much as the pid: two saves racing inside one process
+/// would otherwise stage into the same file, and the first rename would pull it
+/// out from under the second.
+fn temp_path(dir: &Path, name: &OsStr) -> PathBuf {
+    static NEXT: AtomicU64 = AtomicU64::new(0);
+    let nonce = NEXT.fetch_add(1, Ordering::Relaxed);
+    dir.join(format!(
+        ".{}.{}.{nonce}.tmp",
+        name.to_string_lossy(),
+        std::process::id()
+    ))
 }
 
 #[cfg(test)]
@@ -150,7 +165,7 @@ mod tests {
     #[test]
     fn state_path_nests_under_git_dir() {
         assert_eq!(
-            state_path("/tmp/repo", "abc123", "def456"),
+            state_path("/tmp/repo/.git", "abc123", "def456"),
             PathBuf::from("/tmp/repo/.git/gribovik/abc123..def456.json")
         );
     }
@@ -158,7 +173,7 @@ mod tests {
     #[test]
     fn state_path_sanitizes_slashes_in_revision_names() {
         assert_eq!(
-            state_path("/tmp/repo", "origin/master", "feature/thing"),
+            state_path("/tmp/repo/.git", "origin/master", "feature/thing"),
             PathBuf::from("/tmp/repo/.git/gribovik/origin-master..feature-thing.json")
         );
     }
@@ -237,6 +252,38 @@ mod tests {
         fs::create_dir_all(&path).unwrap();
 
         assert_eq!(load(&path), ReviewState::new());
+    }
+
+    /// Two saves racing inside one process used to stage into the same temp
+    /// file, so one thread's rename pulled the file out from under the other.
+    #[test]
+    fn concurrent_saves_all_succeed() {
+        let dir = TempDir::new().unwrap();
+        let path = state_path(dir.path(), "base", "head");
+
+        std::thread::scope(|scope| {
+            for _ in 0..8 {
+                let path = path.clone();
+                scope.spawn(move || {
+                    for _ in 0..20 {
+                        save(&path, &sample()).expect("concurrent save");
+                    }
+                });
+            }
+        });
+
+        // Whoever wrote last, the file is a whole state and not a fragment.
+        assert_eq!(load(&path), sample());
+        // And no staging file survived the race.
+        let leftovers: Vec<_> = fs::read_dir(path.parent().unwrap())
+            .unwrap()
+            .map(|entry| entry.unwrap().file_name())
+            .filter(|name| name.to_string_lossy().ends_with(".tmp"))
+            .collect();
+        assert!(
+            leftovers.is_empty(),
+            "temp files left behind: {leftovers:?}"
+        );
     }
 
     #[test]

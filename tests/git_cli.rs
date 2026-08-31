@@ -317,24 +317,53 @@ fn blob_of_an_unknown_revision_is_an_error() {
 }
 
 #[test]
-fn blob_text_skips_non_utf8_content_with_a_warning() {
+fn a_non_utf8_blob_is_classified_rather_than_erroring() {
     let (dir, repo) = seeded_repo();
     fs::write(dir.path().join("logo.bin"), [0xff, 0xfe, 0x00, 0x41]).unwrap();
     let head = commit(dir.path(), "binary");
-    let mut warnings = Vec::new();
 
-    assert_eq!(repo.blob("HEAD", "logo.bin").unwrap(), Blob::NonUtf8);
+    // The caller decides what to do about it; reading is never a failure.
+    assert_eq!(repo.blob(&head, "logo.bin").unwrap(), Blob::NonUtf8);
     assert_eq!(
-        repo.blob_text(&head, "logo.bin", &mut warnings).unwrap(),
-        None
+        repo.blob(&head, "src/lib.rs").unwrap(),
+        Blob::Text("fn one() {}\n".to_string())
     );
-    assert_eq!(warnings.len(), 1);
-    assert!(warnings[0].contains("logo.bin"), "unexpected: {warnings:?}");
+}
 
-    // A readable file leaves the warning list untouched.
+#[test]
+fn the_git_directory_is_the_one_git_reports() {
+    let (dir, repo) = seeded_repo();
+
+    let git_dir = repo.git_dir().unwrap();
+
+    assert!(git_dir.is_dir(), "not a directory: {}", git_dir.display());
+    assert!(git_dir.is_absolute(), "not absolute: {}", git_dir.display());
     assert_eq!(
-        repo.blob_text(&head, "src/lib.rs", &mut warnings).unwrap(),
-        Some("fn one() {}\n".to_string())
+        git_dir.canonicalize().unwrap(),
+        dir.path().join(".git").canonicalize().unwrap()
     );
-    assert_eq!(warnings.len(), 1);
+}
+
+/// In a linked worktree `.git` is a *file* pointing at the real directory, so
+/// anything that builds `<root>/.git` by hand cannot write review state there.
+#[test]
+fn a_linked_worktree_resolves_to_the_main_git_directory() {
+    let (dir, _) = seeded_repo();
+    let linked = dir.path().join("wt");
+    let status = Command::new("git")
+        .current_dir(dir.path())
+        .args(["worktree", "add", "-b", "side"])
+        .arg(&linked)
+        .output()
+        .unwrap();
+    assert!(status.status.success(), "git worktree add failed");
+    assert!(linked.join(".git").is_file(), "expected a .git file");
+
+    let git_dir = Repo::discover(&linked).unwrap().git_dir().unwrap();
+
+    assert!(git_dir.is_dir(), "not a directory: {}", git_dir.display());
+    assert_eq!(
+        git_dir.canonicalize().unwrap(),
+        dir.path().join(".git").canonicalize().unwrap()
+    );
 }

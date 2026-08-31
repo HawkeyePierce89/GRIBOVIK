@@ -228,6 +228,21 @@ fn outline(snapshot: &GraphSnapshot) -> Vec<(&str, &str, ChangeKind)> {
         .collect()
 }
 
+/// Node ids key the edges and the review state on disk, so a snapshot with two
+/// nodes under one id silently ties two cards' verdicts together. Asserted on
+/// every end-to-end snapshot rather than in one place.
+fn assert_ids_are_unique(snapshot: &GraphSnapshot) {
+    let mut seen = std::collections::HashSet::new();
+    for node in &snapshot.nodes {
+        assert!(
+            seen.insert(node.id.as_str()),
+            "duplicate node id {}: {:?}",
+            node.id,
+            outline(snapshot)
+        );
+    }
+}
+
 fn node<'a>(snapshot: &'a GraphSnapshot, id: &str) -> &'a Node {
     snapshot
         .nodes
@@ -261,6 +276,7 @@ fn analyzes_a_multi_language_change_end_to_end() {
     let repo = Repo::discover(dir).unwrap();
     let snapshot = expect_graph(analyze(&repo, Some(&base), None).unwrap());
 
+    assert_ids_are_unique(&snapshot);
     assert_eq!(snapshot.meta.repo, canonical(dir).display().to_string());
     assert_eq!(snapshot.meta.base, base);
     assert_eq!(snapshot.meta.head, "HEAD");

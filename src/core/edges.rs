@@ -53,7 +53,14 @@ pub fn build_edges(files: &[FileInput], nodes: &[Node]) -> Vec<Edge> {
             let Some(candidates) = index.get(call.as_str()) else {
                 continue;
             };
-            let winners = resolve(caller, candidates, &callables);
+            // A symbol calling itself says nothing about the graph. Dropping
+            // the self-edge before counting matters: a recursive call that also
+            // matches one sibling leaves exactly one real callee, and calling
+            // that ambiguous would draw a dashed edge over a certain one.
+            let winners: Vec<usize> = resolve(caller, candidates, &callables)
+                .into_iter()
+                .filter(|&winner| callables[winner].node.id != caller.node.id)
+                .collect();
             // A single candidate is the answer; several mean the name alone
             // cannot decide, so the reviewer is shown all of them.
             let confidence = if winners.len() == 1 {
@@ -63,10 +70,6 @@ pub fn build_edges(files: &[FileInput], nodes: &[Node]) -> Vec<Edge> {
             };
             for &winner in &winners {
                 let callee = callables[winner].node;
-                // A symbol calling itself says nothing about the graph.
-                if callee.id == caller.node.id {
-                    continue;
-                }
                 edges.push(Edge {
                     from: caller.node.id.clone(),
                     to: callee.id.clone(),

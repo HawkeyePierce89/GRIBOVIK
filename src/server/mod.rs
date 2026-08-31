@@ -46,6 +46,17 @@ pub struct AppState {
 }
 
 impl AppState {
+    /// The review state, whatever a previous panic did to the mutex.
+    ///
+    /// The guarded value is a plain map with no invariant a half-finished write
+    /// could break, so recovering from poisoning is strictly better than
+    /// turning one panicking request into a permanently broken endpoint.
+    fn lock(&self) -> std::sync::MutexGuard<'_, ReviewState> {
+        self.state
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+    }
+
     /// Assemble the shared state from an analysis result and a place to keep
     /// the review in.
     pub fn new(
@@ -71,7 +82,50 @@ pub fn router(state: Arc<AppState>) -> Router {
         .route("/api/state", get(get_state).post(post_state))
         .route("/", get(index))
         .route("/{*path}", get(asset))
+        .layer(axum::middleware::from_fn(reject_foreign_host))
         .with_state(state)
+}
+
+/// Hostnames a browser may legitimately have used to reach a loopback server.
+const LOCAL_HOSTS: [&str; 3] = ["127.0.0.1", "localhost", "[::1]"];
+
+/// Refuse requests that did not address this server by a loopback name.
+///
+/// Binding loopback keeps the network out, but not a page on an attacker's
+/// domain whose DNS resolves to 127.0.0.1: to the browser that page is
+/// same-origin with this server and can read `/api/graph`, which is the diff of
+/// work that has not been pushed anywhere. Checking `Host` is what closes that.
+async fn reject_foreign_host(
+    request: axum::extract::Request,
+    next: axum::middleware::Next,
+) -> Response {
+    let host = request
+        .headers()
+        .get(axum::http::header::HOST)
+        .and_then(|value| value.to_str().ok())
+        .unwrap_or_default();
+    // HTTP/2 and HTTP/3 omit `Host` in favour of `:authority`, which axum puts
+    // back in the URI; an empty host there means neither was sent.
+    let host = if host.is_empty() {
+        request.uri().host().unwrap_or_default()
+    } else {
+        host
+    };
+    // Split the port off, minding that an IPv6 literal is bracketed.
+    let name = match host.rfind(':') {
+        Some(colon) if !host.ends_with(']') => &host[..colon],
+        _ => host,
+    };
+
+    if LOCAL_HOSTS.contains(&name) {
+        next.run(request).await
+    } else {
+        (
+            StatusCode::FORBIDDEN,
+            "gribovik only answers requests addressed to localhost\n",
+        )
+            .into_response()
+    }
 }
 
 /// Serve until Ctrl+C, returning the address that was actually bound.
@@ -115,7 +169,7 @@ async fn get_graph(State(state): State<Arc<AppState>>) -> Json<GraphSnapshot> {
 
 /// `GET /api/state` — every verdict recorded so far.
 async fn get_state(State(state): State<Arc<AppState>>) -> Json<ReviewState> {
-    Json(state.state.lock().expect("review state mutex").clone())
+    Json(state.lock().clone())
 }
 
 /// `POST /api/state` — replace the whole state and write it to disk.
@@ -126,13 +180,13 @@ async fn post_state(
     State(state): State<Arc<AppState>>,
     Json(incoming): Json<ReviewState>,
 ) -> Response {
-    let to_save = {
-        let mut guard = state.state.lock().expect("review state mutex");
-        *guard = incoming;
-        guard.clone()
-    };
+    // The write happens under the lock so that two overlapping posts land on
+    // disk in the order they took it. Dropping the guard first would let an
+    // older state win the race and outlive the newer one the browser is showing.
+    let mut guard = state.lock();
+    *guard = incoming;
 
-    match review::save(&state.state_path, &to_save) {
+    match review::save(&state.state_path, &guard) {
         Ok(()) => StatusCode::NO_CONTENT.into_response(),
         Err(err) => (
             StatusCode::INTERNAL_SERVER_ERROR,
@@ -223,7 +277,13 @@ mod tests {
 
     async fn get(app: &Router, uri: &str) -> Response {
         app.clone()
-            .oneshot(Request::builder().uri(uri).body(Body::empty()).unwrap())
+            .oneshot(
+                Request::builder()
+                    .uri(uri)
+                    .header(header::HOST, "127.0.0.1:7391")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
             .await
             .unwrap()
     }
@@ -234,6 +294,7 @@ mod tests {
                 Request::builder()
                     .method("POST")
                     .uri(uri)
+                    .header(header::HOST, "127.0.0.1:7391")
                     .header(header::CONTENT_TYPE, "application/json")
                     .body(Body::from(body))
                     .unwrap(),
@@ -254,6 +315,51 @@ mod tests {
 
     async fn body_json<T: serde::de::DeserializeOwned>(response: Response) -> T {
         serde_json::from_slice(&body_bytes(response).await).unwrap()
+    }
+
+    /// The request a DNS-rebinding page would make: same-origin as far as the
+    /// browser is concerned, but addressed to the attacker's hostname.
+    #[tokio::test]
+    async fn a_request_for_a_foreign_host_is_refused() {
+        let (_dir, _path, app) = app(ReviewState::new());
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .uri("/api/graph")
+                    .header(header::HOST, "evil.example.com")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::FORBIDDEN);
+    }
+
+    #[tokio::test]
+    async fn every_loopback_spelling_is_accepted() {
+        for host in [
+            "127.0.0.1:7391",
+            "localhost:7391",
+            "[::1]:7391",
+            "localhost",
+        ] {
+            let (_dir, _path, app) = app(ReviewState::new());
+
+            let response = app
+                .oneshot(
+                    Request::builder()
+                        .uri("/api/graph")
+                        .header(header::HOST, host)
+                        .body(Body::empty())
+                        .unwrap(),
+                )
+                .await
+                .unwrap();
+
+            assert_eq!(response.status(), StatusCode::OK, "rejected host {host}");
+        }
     }
 
     #[tokio::test]

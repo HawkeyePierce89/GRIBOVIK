@@ -8,7 +8,7 @@
 
 use std::collections::{HashMap, HashSet};
 
-use crate::core::diff::{hunks, line_diff, slice_diff, Hunk};
+use crate::core::diff::{line_diff, slice_diff};
 use crate::core::error::AnalysisError;
 use crate::core::lang::{analyzer_for_extension, Symbol};
 use crate::core::snapshot::{ChangeKind, DiffLine, DiffTag, Node};
@@ -109,20 +109,23 @@ fn build_file(file: &FileInput, nodes: &mut Vec<Node>, warnings: &mut Vec<String
     let mut symbol_nodes = symbol_cards(file, &file_diff, &old_symbols, &new_symbols);
 
     // Anything the symbol cards did not claim — imports, `impl` scaffolding,
-    // top-level statements — is reviewed as one file-level card.
-    let leftovers: Vec<Hunk> = hunks(&file_diff)
-        .into_iter()
-        .filter(|hunk| !is_covered(hunk, &symbol_nodes))
+    // top-level statements — is reviewed as one file-level card. Coverage is
+    // decided line by line rather than hunk by hunk: a single hunk can straddle
+    // a symbol boundary, and the part outside the symbol still has to be shown.
+    let claimed = claimed_lines(&symbol_nodes);
+    let leftovers: Vec<DiffLine> = file_diff
+        .iter()
+        .filter(|line| is_change(line) && !claimed.contains(&line_key(line)))
+        // A blank line added or removed between two symbols is the one leftover
+        // with nothing to review in it; carding it would put a file node on
+        // almost every file that gained a function.
+        .filter(|line| !line.text.trim().is_empty())
+        .cloned()
         .collect();
 
     nodes.append(&mut symbol_nodes);
     if !leftovers.is_empty() {
-        let lines = file_diff
-            .iter()
-            .filter(|line| leftovers.iter().any(|hunk| belongs_to(line, hunk)))
-            .cloned()
-            .collect();
-        nodes.push(file_node(file, lines));
+        nodes.push(file_node(file, leftovers));
     }
 }
 
@@ -131,47 +134,79 @@ fn build_file(file: &FileInput, nodes: &mut Vec<Node>, warnings: &mut Vec<String
 /// Deleted symbols come first, then the head revision's symbols in source
 /// order; a symbol present on both sides whose span holds no changed line is
 /// dropped, since there is nothing to review about it.
+///
+/// A qualified name is supposed to be unique within a file, but languages let
+/// it repeat — two `impl` blocks declaring `S::fmt`, `#[cfg]`-gated twins,
+/// TypeScript overload signatures. Occurrences are therefore paired up by
+/// position: the *n*-th `S::fmt` of the old side is the previous revision of
+/// the *n*-th `S::fmt` of the new side, and every occurrence past the first
+/// gets a `#n` suffix so node ids stay unique.
 fn symbol_cards(
     file: &FileInput,
     file_diff: &[DiffLine],
     old_symbols: &[Symbol],
     new_symbols: &[Symbol],
 ) -> Vec<Node> {
-    let surviving: HashSet<&str> = new_symbols
-        .iter()
-        .map(|symbol| symbol.qualified_name.as_str())
-        .collect();
-    // First declaration wins, matching the order the analyzer reports.
-    let mut previous: HashMap<&str, &Symbol> = HashMap::new();
-    for symbol in old_symbols {
-        previous
-            .entry(symbol.qualified_name.as_str())
-            .or_insert(symbol);
-    }
+    let (old_occurrences, old_nth) = occurrences(old_symbols);
+    let (new_occurrences, new_nth) = occurrences(new_symbols);
 
     let mut nodes = Vec::new();
-    for symbol in old_symbols {
-        if surviving.contains(symbol.qualified_name.as_str()) {
+    for (symbol, nth) in old_symbols.iter().zip(&old_nth) {
+        // The same name declared as often on the new side means this
+        // occurrence survived; a shrinking count deletes the trailing ones.
+        if new_occurrences
+            .count_of(symbol.qualified_name.as_str())
+            .is_some_and(|count| count > *nth)
+        {
             continue;
         }
         let diff = slice_diff(file_diff, Some(symbol.range()), None);
-        nodes.push(symbol_node(file, symbol, ChangeKind::Deleted, diff));
+        nodes.push(symbol_node(file, symbol, ChangeKind::Deleted, *nth, diff));
     }
-    for symbol in new_symbols {
-        match previous.get(symbol.qualified_name.as_str()) {
+    for (symbol, nth) in new_symbols.iter().zip(&new_nth) {
+        match old_occurrences.get(symbol.qualified_name.as_str(), *nth) {
             Some(before) => {
                 let diff = slice_diff(file_diff, Some(before.range()), Some(symbol.range()));
                 if diff.iter().any(is_change) {
-                    nodes.push(symbol_node(file, symbol, ChangeKind::Modified, diff));
+                    nodes.push(symbol_node(file, symbol, ChangeKind::Modified, *nth, diff));
                 }
             }
             None => {
                 let diff = slice_diff(file_diff, None, Some(symbol.range()));
-                nodes.push(symbol_node(file, symbol, ChangeKind::Added, diff));
+                nodes.push(symbol_node(file, symbol, ChangeKind::Added, *nth, diff));
             }
         }
     }
     nodes
+}
+
+/// One side's symbols indexed by qualified name, keeping every declaration in
+/// source order rather than letting the first one win.
+struct Occurrences<'a>(HashMap<&'a str, Vec<&'a Symbol>>);
+
+impl<'a> Occurrences<'a> {
+    /// The `nth` declaration of `name`, if the side has that many.
+    fn get(&self, name: &str, nth: usize) -> Option<&'a Symbol> {
+        self.0.get(name).and_then(|all| all.get(nth)).copied()
+    }
+
+    /// How many times `name` is declared, or `None` when it is not.
+    fn count_of(&self, name: &str) -> Option<usize> {
+        self.0.get(name).map(Vec::len)
+    }
+}
+
+/// Index `symbols` by name and tell each one which occurrence of its name it
+/// is, so the two results can be zipped with the input.
+fn occurrences(symbols: &[Symbol]) -> (Occurrences<'_>, Vec<usize>) {
+    let mut index: HashMap<&str, Vec<&Symbol>> = HashMap::new();
+    let mut nth = Vec::with_capacity(symbols.len());
+    for symbol in symbols {
+        let all = index.entry(symbol.qualified_name.as_str()).or_default();
+        nth.push(all.len());
+        all.push(symbol);
+    }
+    (Occurrences(index), nth)
 }
 
 /// Parse both sides with the analyzer the extension selects.
@@ -184,9 +219,23 @@ fn symbols(path: &str, old: &str, new: &str) -> Result<(Vec<Symbol>, Vec<Symbol>
     Ok((old_symbols, new_symbols))
 }
 
-fn symbol_node(file: &FileInput, symbol: &Symbol, change: ChangeKind, diff: Vec<DiffLine>) -> Node {
+fn symbol_node(
+    file: &FileInput,
+    symbol: &Symbol,
+    change: ChangeKind,
+    nth: usize,
+    diff: Vec<DiffLine>,
+) -> Node {
+    // The first declaration of a name keeps the plain id, so the overwhelming
+    // majority of nodes — and the review state keyed on them — are unaffected
+    // by the existence of this suffix.
+    let suffix = if nth == 0 {
+        String::new()
+    } else {
+        format!("#{}", nth + 1)
+    };
     Node {
-        id: format!("{}::{}", file.path, symbol.qualified_name),
+        id: format!("{}::{}{suffix}", file.path, symbol.qualified_name),
         file: file.path.clone(),
         name: symbol.qualified_name.clone(),
         kind: symbol.kind.clone(),
@@ -220,23 +269,20 @@ fn degraded_warning(path: &str, error: &AnalysisError) -> String {
     }
 }
 
-/// Whether any card already shows one of this hunk's lines.
-///
-/// Coverage is decided on the lines that actually landed on a card rather than
-/// on span overlap: a hunk sitting between two symbols would "touch" both by
-/// the range arithmetic while belonging to neither.
-fn is_covered(hunk: &Hunk, cards: &[Node]) -> bool {
+/// Identify a diff line by the position it occupies on both sides. Every line
+/// of the diff carries at least one side, and no two lines share a pair.
+fn line_key(line: &DiffLine) -> (Option<u32>, Option<u32>) {
+    (line.old_line, line.new_line)
+}
+
+/// Every changed line the symbol cards already show.
+fn claimed_lines(cards: &[Node]) -> HashSet<(Option<u32>, Option<u32>)> {
     cards
         .iter()
         .flat_map(|node| node.diff.iter())
-        .any(|line| belongs_to(line, hunk))
-}
-
-/// Whether a changed line sits inside `hunk` on either side.
-fn belongs_to(line: &DiffLine, hunk: &Hunk) -> bool {
-    is_change(line)
-        && (line.old_line.is_some_and(|l| hunk.old_range.contains(l))
-            || line.new_line.is_some_and(|l| hunk.new_range.contains(l)))
+        .filter(|line| is_change(line))
+        .map(line_key)
+        .collect()
 }
 
 fn is_change(line: &DiffLine) -> bool {
@@ -365,6 +411,8 @@ mod tests {
                 // The old `}` closing the impl block aligns with the one
                 // closing `step`, so it lands on `step`'s card as context.
                 row("src/a.rs::step", "function", "added", "+18 +19 =13/20"),
+                // The new `}` closing the impl block belongs to no symbol.
+                row("src/a.rs::<file>", "file", "modified", "+16"),
             ]
         );
     }
@@ -384,6 +432,9 @@ mod tests {
                     "modified",
                     "=11/1 -12 +2 =13/3"
                 ),
+                // The `impl Legacy {` / `}` scaffolding around the deleted
+                // method is inside no symbol's span and is reviewed here.
+                row("src/a.rs::<file>", "file", "modified", "-5 -9"),
             ]
         );
     }
@@ -451,6 +502,9 @@ mod tests {
                     "modified",
                     "-11 -12 +1 +2 =13/3"
                 ),
+                // The `extension Point {` / `}` scaffolding belongs to no
+                // symbol, so it lands on the file card.
+                row("App/Legacy.swift::<file>", "file", "modified", "-5 -9"),
             ]
         );
     }
@@ -660,9 +714,81 @@ mod tests {
             "struct Counter;\n\nimpl Counter {\n    fn bump(&self) {}\n}\n",
         )]);
         let ids: Vec<&str> = nodes.iter().map(|node| node.id.as_str()).collect();
-        assert_eq!(ids, vec!["src/a.rs::Counter", "src/a.rs::Counter::bump"]);
+        assert_eq!(
+            ids,
+            vec![
+                "src/a.rs::Counter",
+                "src/a.rs::Counter::bump",
+                // The `impl Counter {` line and its `}` are outside both spans.
+                "src/a.rs::<file>",
+            ]
+        );
         assert!(nodes.iter().all(|node| node.file == "src/a.rs"));
         assert_eq!(nodes[1].name, "Counter::bump");
+    }
+
+    /// The regression that motivates line-level leftover detection: a single
+    /// hunk covering both a top-level statement and the first line of the
+    /// symbol below it used to count as fully reviewed once the symbol claimed
+    /// its share, and the statement vanished from the snapshot entirely.
+    #[test]
+    fn a_hunk_straddling_a_symbol_boundary_is_reviewed_on_both_cards() {
+        let file = FileInput::modified(
+            "src/a.rs",
+            "use std::fmt;\nfn a() -> u32 { 1 }\n",
+            "use std::io;\nfn a() -> u32 { 2 }\n",
+        );
+        assert_eq!(
+            outline(&[file]),
+            vec![
+                row("src/a.rs::a", "function", "modified", "-2 +2"),
+                row("src/a.rs::<file>", "file", "modified", "-1 +1"),
+            ]
+        );
+    }
+
+    /// Node ids key the edges and the review state on disk, so a file that
+    /// declares one qualified name twice — two trait `impl`s, `#[cfg]` twins,
+    /// TypeScript overloads — must still produce distinct ids.
+    #[test]
+    fn repeated_qualified_names_get_distinct_ids() {
+        let (nodes, _) = build_nodes(&[FileInput::added(
+            "src/s.rs",
+            "struct S;\n\
+             impl Display for S {\n    fn fmt(&self) -> u32 { 1 }\n}\n\
+             impl Debug for S {\n    fn fmt(&self) -> u32 { 2 }\n}\n",
+        )]);
+        let ids: Vec<&str> = nodes.iter().map(|node| node.id.as_str()).collect();
+        assert_eq!(
+            ids,
+            vec![
+                "src/s.rs::S",
+                "src/s.rs::S::fmt",
+                "src/s.rs::S::fmt#2",
+                "src/s.rs::<file>",
+            ]
+        );
+        // Both cards keep the name the reviewer recognizes; only the id differs.
+        assert_eq!(nodes[1].name, "S::fmt");
+        assert_eq!(nodes[2].name, "S::fmt");
+    }
+
+    /// Occurrences are paired by position, so editing the second of two
+    /// same-named methods diffs it against the second one, not the first.
+    #[test]
+    fn repeated_names_are_paired_by_occurrence_across_revisions() {
+        let file = FileInput::modified(
+            "src/s.rs",
+            "impl A for S {\n    fn go(&self) -> u32 { 1 }\n}\n\
+             impl B for S {\n    fn go(&self) -> u32 { 2 }\n}\n",
+            "impl A for S {\n    fn go(&self) -> u32 { 1 }\n}\n\
+             impl B for S {\n    fn go(&self) -> u32 { 3 }\n}\n",
+        );
+        assert_eq!(
+            outline(&[file]),
+            // The first `go` is untouched and produces no card at all.
+            vec![row("src/s.rs::S::go#2", "method", "modified", "-5 +5")]
+        );
     }
 
     #[test]

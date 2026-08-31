@@ -160,11 +160,20 @@ pub(crate) fn field_text<'a>(node: Node, field: &str, src: &'a str) -> &'a str {
 }
 
 /// Visit `node` and every descendant, parents before children.
+///
+/// Iterative rather than recursive: a vendored or generated source can nest
+/// expressions thousands deep, and a stack overflow aborts the process outright
+/// instead of degrading into the empty call list the API promises.
 pub(crate) fn for_each_descendant(node: Node, visit: &mut dyn FnMut(Node)) {
-    visit(node);
-    let mut cursor = node.walk();
-    for child in node.children(&mut cursor) {
-        for_each_descendant(child, visit);
+    let mut stack = vec![node];
+    while let Some(current) = stack.pop() {
+        visit(current);
+        let mut cursor = current.walk();
+        let before = stack.len();
+        stack.extend(current.children(&mut cursor));
+        // Children were pushed in source order and pop in reverse, so undo that
+        // and keep the parents-before-children, left-to-right visit order.
+        stack[before..].reverse();
     }
 }
 

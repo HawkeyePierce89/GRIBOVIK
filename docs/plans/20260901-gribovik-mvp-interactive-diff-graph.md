@@ -245,7 +245,12 @@ web/
 
 ## Post-Completion Verification (manual)
 
-- Run `gribovik` in a real repository with Rust/Swift/TS changes and confirm the graph renders with elk layout, working pan/zoom/minimap, correct badges, and dashed ambiguous edges.
-- Set statuses and add comments, restart the CLI on the same base..head, and confirm they persist.
-- Run with `--no-open` and `--port`, and with `--assets web/dist` against a `vite dev` build.
-- Confirm `cargo build --release` succeeds on macOS, Windows, and Linux.
+- [ ] Run `gribovik` in a real repository with Rust/Swift/TS changes and confirm the graph renders with elk layout, working pan/zoom/minimap, correct badges, and dashed ambiguous edges.
+- [ ] Set statuses and add comments, restart the CLI on the same base..head, and confirm they persist.
+- [ ] Run with `--no-open` and `--port`, and with `--assets web/dist` against a `vite dev` build.
+- [ ] Confirm `cargo build --release` succeeds on macOS, Windows, and Linux.
+
+Not yet done. Two limits are worth recording rather than leaving implied:
+`just` is not installed on the machine the plan was executed on, so the
+justfile recipes have only ever been run as their expanded commands, never as
+recipes; and only macOS has been built — Windows and Linux are unverified.

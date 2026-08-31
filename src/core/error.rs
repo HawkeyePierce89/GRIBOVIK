@@ -13,10 +13,6 @@ pub enum AnalysisError {
     /// No `LanguageAnalyzer` is registered for this file extension.
     #[error("unsupported file extension: {0}")]
     UnsupportedExtension(String),
-
-    /// A line range is empty-in-the-wrong-direction or points past the source.
-    #[error("invalid line range {start}..{end}")]
-    InvalidRange { start: u32, end: u32 },
 }
 
 impl AnalysisError {
@@ -54,11 +50,6 @@ mod tests {
         assert_eq!(
             AnalysisError::UnsupportedExtension("md".to_string()).to_string(),
             "unsupported file extension: md"
-        );
-
-        assert_eq!(
-            AnalysisError::InvalidRange { start: 12, end: 4 }.to_string(),
-            "invalid line range 12..4"
         );
     }
 

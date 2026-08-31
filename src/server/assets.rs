@@ -135,12 +135,16 @@ mod tests {
             .unwrap()
     }
 
+    /// Serve from a `dist` *inside* the temp dir, so a test about escaping the
+    /// asset root has somewhere to escape to that is still cleaned up.
     fn dir_assets() -> (TempDir, Assets) {
         let dir = TempDir::new().unwrap();
-        std::fs::write(dir.path().join("index.html"), "<html>from disk</html>").unwrap();
-        std::fs::create_dir(dir.path().join("assets")).unwrap();
-        std::fs::write(dir.path().join("assets/app.js"), "console.log(1)").unwrap();
-        let assets = Assets::new(Some(dir.path().to_path_buf()));
+        let root = dir.path().join("dist");
+        std::fs::create_dir(&root).unwrap();
+        std::fs::write(root.join("index.html"), "<html>from disk</html>").unwrap();
+        std::fs::create_dir(root.join("assets")).unwrap();
+        std::fs::write(root.join("assets/app.js"), "console.log(1)").unwrap();
+        let assets = Assets::new(Some(root));
         (dir, assets)
     }
 
@@ -205,7 +209,8 @@ mod tests {
     #[tokio::test]
     async fn a_traversing_path_falls_back_to_the_index_instead_of_escaping() {
         let (dir, assets) = dir_assets();
-        std::fs::write(dir.path().parent().unwrap().join("secret.txt"), "nope").unwrap();
+        // One level above the asset root, which `/../secret.txt` aims at.
+        std::fs::write(dir.path().join("secret.txt"), "nope").unwrap();
 
         let response = assets.respond("/../secret.txt");
         assert_eq!(body_string(response).await, "<html>from disk</html>");

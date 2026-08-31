@@ -25,9 +25,20 @@ gribovik                     # review this branch against origin/master
 5. Serves the result on `localhost` to a React Flow SPA laid out left-to-right
    with elkjs, and persists your review state under `.git/gribovik/`.
 
-Hunks that fall outside every symbol — import blocks, top-level constants,
-whitespace at the edges — are collected into a synthetic **file-level** card so
-nothing in the diff goes unreviewed.
+Changed lines that fall outside every symbol — import blocks, top-level
+constants, `impl` scaffolding — are collected into a synthetic **file-level**
+card, so a hunk that straddles a symbol boundary is reviewed on both cards
+rather than only on the symbol's. Blank lines added or removed between symbols
+are the one exception: they carry nothing to review and would otherwise put a
+file card on almost every file that gained a function.
+
+GRIBOVIK compares two **commits**. Working-tree changes — unstaged, or staged
+but not committed — are not part of any revision range and will not appear;
+commit or stash before reviewing.
+
+Renames are not tracked. Git reports them as a delete of the old path plus an
+add of the new one, and GRIBOVIK reviews them that way: every symbol in the
+file shows up once as deleted and once as added.
 
 ## Supported languages
 
@@ -39,7 +50,22 @@ nothing in the diff goes unreviewed.
 
 Changed files with any other extension are ignored. A file whose syntax the
 parser rejects still gets a file-level card with the whole diff, plus a warning
-in the banner at the top of the page.
+in the banner at the top of the page. A file that is not UTF-8 text, or that
+git cannot produce for one side of the range, is left out of the graph
+altogether and named in the same banner.
+
+## In the browser
+
+The left panel counts the changed symbols and how many are approved, rejected,
+or still pending. Clicking a counter highlights exactly those cards; clicking
+it again clears the highlight. **Approved cards fade to 45% opacity** — that is
+deliberate, not a rendering glitch, so the canvas visibly empties as you work.
+
+Each card carries its file path, a change badge, its slice of the diff, the
+three verdict buttons, and a comment box. The graph pans and zooms, with a
+minimap and controls in the corners; a dashed edge is one the call resolver was
+not sure about. Warnings from the analysis sit in a banner at the top, and a
+failed save shows a red banner at the bottom rather than silently losing marks.
 
 ## Build
 
@@ -86,6 +112,10 @@ work.
 | `--no-open` | off | Print the URL instead of opening a browser. |
 | `--assets <DIR>` | embedded | Serve the frontend from a directory on disk instead of the build baked into the binary. Useful with `web/dist` while working on the UI. |
 
+The server binds loopback only, and answers only requests addressed to
+`localhost` or `127.0.0.1` — anything else gets a 403, so a web page cannot
+reach your unpushed diff by pointing its own hostname at 127.0.0.1.
+
 GRIBOVIK prints the URL it bound to and runs until `Ctrl+C`. If the range
 contains no reviewable changes it says so and exits 0 without binding a port.
 Any failure — not a git repository, no `origin/master` or `origin/main`, an
@@ -97,19 +127,38 @@ stderr with exit code 1.
 Statuses and comments are written to:
 
 ```
-<repo>/.git/gribovik/<base>..<head>.json
+<git-dir>/gribovik/<merge-base>..<head>.json
 ```
 
-Slashes in revision names become `-`, so `origin/master..HEAD` is stored as
-`origin-master..HEAD.json`. The file is JSON keyed by node id
-(`<file>::<qualified_name>`), written atomically, and stable across saves so it
-diffs cleanly if you ever open it. Because it lives inside `.git/` it is never
-committed, is not shared with anyone else, and disappears with the clone. A
-missing or corrupt file is treated as an empty review rather than an error.
+`<git-dir>` is whatever `git rev-parse --git-common-dir` reports — usually
+`<repo>/.git`, but a linked worktree or a submodule keeps its data elsewhere,
+and every worktree of a repository shares one review.
+
+The base component is the **resolved merge base**, not the revision you typed,
+so `gribovik origin/master` writes something like `9f3c1e…a2..HEAD.json`.
+Slashes in the head become `-` (`feature/x` → `feature-x`). One consequence is
+worth knowing: fetching new commits onto the base branch or rebasing moves the
+merge base, which starts a fresh review file — the old marks stay on disk under
+the old merge base but are no longer loaded.
+
+The file is JSON keyed by node id (`<file>::<qualified_name>`), written
+atomically, and stable across saves so it diffs cleanly if you ever open it.
+Because it lives inside the git directory it is never committed, is not shared
+with anyone else, and disappears with the clone. A missing or corrupt file is
+treated as an empty review rather than an error.
 
 Re-running GRIBOVIK on the same `base..head` picks the marks back up.
 
 ## Development
+
+`build.rs` refuses to compile without `web/dist/index.html`, so on a fresh
+clone the frontend has to be built once before any cargo command works:
+
+```sh
+just build-web    # or: cd web && npm ci && npm run build
+```
+
+Then:
 
 ```sh
 just test         # cargo test, then npm test in web/
