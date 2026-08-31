@@ -7,8 +7,10 @@
 pub mod diff;
 pub mod error;
 pub mod lang;
+pub mod nodes;
 pub mod snapshot;
 
 pub use error::AnalysisError;
 pub use lang::{analyzer_for_extension, LanguageAnalyzer, Symbol};
+pub use nodes::{build_nodes, FileInput, FILE_KIND};
 pub use snapshot::{ChangeKind, Confidence, DiffLine, DiffTag, Edge, GraphSnapshot, Meta, Node};

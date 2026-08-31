@@ -139,12 +139,12 @@ web/
 **Files:**
 - Create: `src/core/nodes.rs`
 
-- [ ] Define the pure core entry input `FileInput { path, old: Option<String>, new: Option<String> }` and implement `build_nodes(&[FileInput]) -> (Vec<Node>, Vec<String> /*warnings*/)`
-- [ ] For each file: pick the analyzer by extension, parse old and new sources, compute the line diff and hunks, then classify — symbol present only in `new` → `added`, only in `old` → `deleted`, in both and intersecting a hunk → `modified`; symbols in both with no intersecting hunk are dropped
-- [ ] Attach each node's own diff via `slice_diff` over its old/new line span; set `id = "<file>::<qualified_name>"`
-- [ ] Emit one synthetic file-level node (`kind: "file"`, name = file path) per file whose hunks fall outside every symbol range, carrying just those hunk lines; on parse failure or unsupported extension emit a file-level node with the whole file diff plus a warning string
-- [ ] Write unit tests over the Task 4–6 fixtures: expected node ids, kinds, change kinds, and per-node diff line numbers; plus a deliberately malformed source asserting graceful degradation + warning
-- [ ] Run `cargo test` — must pass before Task 8
+- [x] Define the pure core entry input `FileInput { path, old: Option<String>, new: Option<String> }` and implement `build_nodes(&[FileInput]) -> (Vec<Node>, Vec<String> /*warnings*/)`
+- [x] For each file: pick the analyzer by extension, parse old and new sources, compute the line diff and hunks, then classify — symbol present only in `new` → `added`, only in `old` → `deleted`, in both and intersecting a hunk → `modified`; symbols in both with no intersecting hunk are dropped
+- [x] Attach each node's own diff via `slice_diff` over its old/new line span; set `id = "<file>::<qualified_name>"`
+- [x] Emit one synthetic file-level node (`kind: "file"`, name = file path) per file whose hunks fall outside every symbol range, carrying just those hunk lines; on parse failure or unsupported extension emit a file-level node with the whole file diff plus a warning string
+- [x] Write unit tests over the Task 4–6 fixtures: expected node ids, kinds, change kinds, and per-node diff line numbers; plus a deliberately malformed source asserting graceful degradation + warning
+- [x] Run `cargo test` — must pass before Task 8
 
 ### Task 8: Call-edge resolution
 
