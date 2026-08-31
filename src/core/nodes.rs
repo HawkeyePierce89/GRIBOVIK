@@ -244,7 +244,7 @@ fn is_change(line: &DiffLine) -> bool {
 }
 
 /// The extension of `path`, without its dot, or `""` when it has none.
-fn extension(path: &str) -> &str {
+pub(crate) fn extension(path: &str) -> &str {
     let name = path.rsplit(['/', '\\']).next().unwrap_or(path);
     match name.rfind('.') {
         // A leading dot names a hidden file, not an extension.

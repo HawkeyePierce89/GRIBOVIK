@@ -151,11 +151,11 @@ web/
 **Files:**
 - Create: `src/core/edges.rs`
 
-- [ ] Build an index from bare symbol name → changed-node candidates (skipping file-level nodes)
-- [ ] For each non-file-level node, collect `calls_in_range` over its new-version span (old span for deleted nodes) and resolve each call name in priority order: candidate in the same file → candidate in the same directory → unique candidate anywhere in the graph
-- [ ] Mark an edge `ambiguous` when the winning tier still has multiple candidates (emit one edge per candidate); produce no edge when nothing matches; drop self-edges and deduplicate `(from, to)` keeping the strongest confidence
-- [ ] Write unit tests covering same-file resolution, cross-file unique-name resolution, same-directory preference over a distant file, ambiguous multi-candidate, and a call into unchanged code producing no edge
-- [ ] Run `cargo test` — must pass before Task 9
+- [x] Build an index from bare symbol name → changed-node candidates (skipping file-level nodes)
+- [x] For each non-file-level node, collect `calls_in_range` over its new-version span (old span for deleted nodes) and resolve each call name in priority order: candidate in the same file → candidate in the same directory → unique candidate anywhere in the graph
+- [x] Mark an edge `ambiguous` when the winning tier still has multiple candidates (emit one edge per candidate); produce no edge when nothing matches; drop self-edges and deduplicate `(from, to)` keeping the strongest confidence
+- [x] Write unit tests covering same-file resolution, cross-file unique-name resolution, same-directory preference over a distant file, ambiguous multi-candidate, and a call into unchanged code producing no edge
+- [x] Run `cargo test` — must pass before Task 9
 
 ### Task 9: Snapshot assembly and end-to-end analysis
 
