@@ -10,6 +10,7 @@
 
 pub mod rust;
 pub mod swift;
+pub mod tsjs;
 
 use tree_sitter::{Language, Node, Tree};
 
@@ -65,6 +66,10 @@ pub fn analyzer_for_extension(ext: &str) -> Option<Box<dyn LanguageAnalyzer>> {
     match ext.trim_start_matches('.').to_ascii_lowercase().as_str() {
         "rs" => Some(Box::new(rust::RustAnalyzer)),
         "swift" => Some(Box::new(swift::SwiftAnalyzer)),
+        "ts" => Some(Box::new(tsjs::TsJsAnalyzer::new(tsjs::Dialect::TypeScript))),
+        // The tsx grammar is the only one that accepts JSX, and it accepts
+        // everything plain JavaScript can say, so `.js` goes through it too.
+        "tsx" | "js" | "jsx" => Some(Box::new(tsjs::TsJsAnalyzer::new(tsjs::Dialect::Tsx))),
         _ => None,
     }
 }
@@ -180,6 +185,32 @@ mod tests {
         let symbols = analyzer.symbols("func solo() {}\n").unwrap();
         assert_eq!(symbols.len(), 1);
         assert_eq!(symbols[0].name, "solo");
+    }
+
+    #[test]
+    fn registry_resolves_every_typescript_and_javascript_extension() {
+        for ext in ["ts", "tsx", "js", "jsx"] {
+            let analyzer =
+                analyzer_for_extension(ext).unwrap_or_else(|| panic!("`.{ext}` is supported"));
+            let symbols = analyzer.symbols("function solo() {}\n").unwrap();
+            assert_eq!(symbols.len(), 1, "{ext}");
+            assert_eq!(symbols[0].name, "solo", "{ext}");
+        }
+    }
+
+    #[test]
+    fn registry_picks_the_jsx_capable_grammar_for_tsx_and_jsx() {
+        let component = "const A = () => <div />;\n";
+        for ext in ["tsx", "jsx", "js"] {
+            let analyzer = analyzer_for_extension(ext).expect("supported");
+            assert!(
+                analyzer.symbols(component).is_ok(),
+                "{ext} should parse JSX"
+            );
+        }
+        // `.ts` deliberately does not: there `<` opens a type argument list.
+        let plain = analyzer_for_extension("ts").expect("supported");
+        assert!(plain.symbols(component).is_err());
     }
 
     #[test]

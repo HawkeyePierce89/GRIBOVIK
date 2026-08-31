@@ -127,12 +127,12 @@ web/
 **Files:**
 - Create: `src/core/lang/tsjs.rs`, `tests/fixtures/ts/*`
 
-- [ ] Implement one analyzer parameterized by dialect (`typescript` for `.ts`, `tsx` for `.tsx`/`.jsx`, `tsx` grammar also used for `.js` to accept JSX-free JS)
-- [ ] Extract `function_declaration`, `method_definition` inside `class_declaration` (qualified `Class.method`), arrow/function expressions bound to a `variable_declarator` or exported const, `class_declaration`, `interface_declaration`, `type_alias_declaration`, `enum_declaration`
-- [ ] Implement `calls_in_range`: `call_expression` with identifier callee or `member_expression` property name, plus `new_expression` constructor names
-- [ ] Add before/after fixtures covering an arrow-const function, a class method, an interface, and a `.tsx` component
-- [ ] Write unit tests asserting symbols and calls per dialect, including that `.tsx` parses JSX
-- [ ] Run `cargo test` — must pass before Task 7
+- [x] Implement one analyzer parameterized by dialect (`typescript` for `.ts`, `tsx` for `.tsx`/`.jsx`, `tsx` grammar also used for `.js` to accept JSX-free JS)
+- [x] Extract `function_declaration`, `method_definition` inside `class_declaration` (qualified `Class.method`), arrow/function expressions bound to a `variable_declarator` or exported const, `class_declaration`, `interface_declaration`, `type_alias_declaration`, `enum_declaration`
+- [x] Implement `calls_in_range`: `call_expression` with identifier callee or `member_expression` property name, plus `new_expression` constructor names
+- [x] Add before/after fixtures covering an arrow-const function, a class method, an interface, and a `.tsx` component
+- [x] Write unit tests asserting symbols and calls per dialect, including that `.tsx` parses JSX
+- [x] Run `cargo test` — must pass before Task 7
 
 ### Task 7: Node construction and change classification
 
