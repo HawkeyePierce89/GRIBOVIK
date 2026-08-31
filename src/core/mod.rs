@@ -4,6 +4,7 @@
 //! source text in and returns a [`snapshot::GraphSnapshot`]. Errors are
 //! `thiserror`-based ([`error::AnalysisError`]); `anyhow` starts at the shell.
 
+pub mod diff;
 pub mod error;
 pub mod snapshot;
 

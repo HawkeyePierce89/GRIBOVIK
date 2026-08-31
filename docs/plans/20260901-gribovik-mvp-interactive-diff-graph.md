@@ -93,11 +93,11 @@ web/
 **Files:**
 - Create: `src/core/diff.rs`
 
-- [ ] Implement `line_diff(old: &str, new: &str) -> Vec<DiffLine>` with `similar::TextDiff::from_lines`, emitting every line with its tag and 1-based `old_line`/`new_line` (context lines carry both)
-- [ ] Implement `hunks(diff: &[DiffLine]) -> Vec<Hunk{old_range, new_range}>` grouping consecutive non-context lines (empty side ranges represented as zero-length at the insertion point)
-- [ ] Implement `slice_diff(diff, old_range, new_range) -> Vec<DiffLine>` selecting the lines belonging to a symbol's old and/or new line span, preserving order
-- [ ] Write unit tests: pure insertion, pure deletion, modification in the middle, whole-file rewrite, empty old (added file) and empty new (deleted file); assert exact line numbers and hunk ranges
-- [ ] Run `cargo test` — must pass before Task 4
+- [x] Implement `line_diff(old: &str, new: &str) -> Vec<DiffLine>` with `similar::TextDiff::from_lines`, emitting every line with its tag and 1-based `old_line`/`new_line` (context lines carry both)
+- [x] Implement `hunks(diff: &[DiffLine]) -> Vec<Hunk{old_range, new_range}>` grouping consecutive non-context lines (empty side ranges represented as zero-length at the insertion point)
+- [x] Implement `slice_diff(diff, old_range, new_range) -> Vec<DiffLine>` selecting the lines belonging to a symbol's old and/or new line span, preserving order
+- [x] Write unit tests: pure insertion, pure deletion, modification in the middle, whole-file rewrite, empty old (added file) and empty new (deleted file); assert exact line numbers and hunk ranges
+- [x] Run `cargo test` — must pass before Task 4
 
 ### Task 4: LanguageAnalyzer trait and Rust analyzer
 
