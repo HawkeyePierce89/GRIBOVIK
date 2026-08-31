@@ -74,6 +74,14 @@ pub fn analyzer_for_extension(ext: &str) -> Option<Box<dyn LanguageAnalyzer>> {
     }
 }
 
+/// Whether any analyzer claims this file extension.
+///
+/// The shell uses it to decide which changed files are worth loading at all,
+/// so the supported-language list lives in exactly one place.
+pub fn supports_extension(ext: &str) -> bool {
+    analyzer_for_extension(ext).is_some()
+}
+
 /// Parse `src`, treating syntax errors as a hard failure.
 ///
 /// A tree with `ERROR` nodes would yield a plausible-looking but silently
@@ -170,6 +178,17 @@ pub(crate) fn push_unique(out: &mut Vec<String>, name: &str) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn supports_exactly_the_six_source_extensions() {
+        for ext in ["rs", "swift", "ts", "tsx", "js", "jsx"] {
+            assert!(supports_extension(ext), "{ext} should be supported");
+            assert!(supports_extension(&format!(".{ext}")), ".{ext} too");
+        }
+        for ext in ["md", "png", "toml", ""] {
+            assert!(!supports_extension(ext), "{ext} should not be supported");
+        }
+    }
 
     #[test]
     fn registry_resolves_rust_sources() {

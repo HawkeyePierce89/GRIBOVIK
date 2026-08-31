@@ -163,11 +163,11 @@ web/
 - Create: `src/pipeline.rs`, `tests/integration_repo.rs`
 - Modify: `src/core/mod.rs`
 
-- [ ] Expose the pure core API `core::build_snapshot(meta_inputs, files: &[FileInput]) -> GraphSnapshot` wiring nodes + edges + meta (warnings collected, `files_changed` counted)
-- [ ] Implement `pipeline::analyze(repo, base, head) -> anyhow::Result<GraphSnapshot>`: resolve revisions via `git.rs`, filter changed files by the six supported extensions, load old/new blobs, and call `core::build_snapshot`
-- [ ] Return a distinguishable "no changes" outcome when the filtered file list is empty so the CLI can print a message and skip the server
-- [ ] Write `tests/integration_repo.rs`: create a temp repo, commit a Rust + Swift + TS baseline, commit modifications (add a fn, modify a method, delete a type, edit imports), run `pipeline::analyze` and assert the complete snapshot — node ids/kinds/changes, at least one certain edge and one ambiguous edge, and file-level nodes for the import-only change
-- [ ] Run `cargo test` — must pass before Task 10
+- [x] Expose the pure core API `core::build_snapshot(meta_inputs, files: &[FileInput]) -> GraphSnapshot` wiring nodes + edges + meta (warnings collected, `files_changed` counted)
+- [x] Implement `pipeline::analyze(repo, base, head) -> anyhow::Result<GraphSnapshot>`: resolve revisions via `git.rs`, filter changed files by the six supported extensions, load old/new blobs, and call `core::build_snapshot`
+- [x] Return a distinguishable "no changes" outcome when the filtered file list is empty so the CLI can print a message and skip the server
+- [x] Write `tests/integration_repo.rs`: create a temp repo, commit a Rust + Swift + TS baseline, commit modifications (add a fn, modify a method, delete a type, edit imports), run `pipeline::analyze` and assert the complete snapshot — node ids/kinds/changes, at least one certain edge and one ambiguous edge, and file-level nodes for the import-only change
+- [x] Run `cargo test` — must pass before Task 10
 
 ### Task 10: Review state persistence
 
