@@ -81,12 +81,12 @@ web/
 **Files:**
 - Create: `src/git.rs`, `tests/git_cli.rs`
 
-- [ ] Implement `Repo::discover(cwd) -> Result<Repo>` via `git rev-parse --show-toplevel`, with a human-readable "not a git repository" error
-- [ ] Implement `resolve_base(explicit: Option<&str>)`: with no argument, probe `origin/master` then `origin/main` via `git rev-parse --verify`, error clearly if neither exists; then `git merge-base <base> <head>`
-- [ ] Implement `changed_files(base, head) -> Vec<ChangedFile{path, status}>` via `git diff --name-status <base> <head>` (map A/M/D; treat R as delete+add of the two paths)
-- [ ] Implement `blob(rev, path) -> Option<String>` via `git show <rev>:<path>`, returning `None` for missing paths and skipping non-UTF-8 blobs with a warning
-- [ ] Write tests in `tests/git_cli.rs`: build temp repos with `tempfile` + `git init`/commits and assert discovery, base fallback (origin/master vs origin/main via a local bare remote), unknown-revision error text, name-status parsing, and blob reads
-- [ ] Run `cargo test` — must pass before Task 3
+- [x] Implement `Repo::discover(cwd) -> Result<Repo>` via `git rev-parse --show-toplevel`, with a human-readable "not a git repository" error
+- [x] Implement `resolve_base(explicit: Option<&str>)`: with no argument, probe `origin/master` then `origin/main` via `git rev-parse --verify`, error clearly if neither exists; then `git merge-base <base> <head>`
+- [x] Implement `changed_files(base, head) -> Vec<ChangedFile{path, status}>` via `git diff --name-status <base> <head>` (map A/M/D; treat R as delete+add of the two paths)
+- [x] Implement `blob(rev, path) -> Option<String>` via `git show <rev>:<path>`, returning `None` for missing paths and skipping non-UTF-8 blobs with a warning
+- [x] Write tests in `tests/git_cli.rs`: build temp repos with `tempfile` + `git init`/commits and assert discovery, base fallback (origin/master vs origin/main via a local bare remote), unknown-revision error text, name-status parsing, and blob reads
+- [x] Run `cargo test` — must pass before Task 3
 
 ### Task 3: Line diff engine
 

@@ -4,3 +4,4 @@
 //! (git, server, CLI) form a thin I/O shell.
 
 pub mod core;
+pub mod git;
