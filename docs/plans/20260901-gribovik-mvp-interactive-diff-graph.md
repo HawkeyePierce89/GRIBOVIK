@@ -104,12 +104,12 @@ web/
 **Files:**
 - Create: `src/core/lang/mod.rs`, `src/core/lang/rust.rs`, `tests/fixtures/rust/*`
 
-- [ ] Define `Symbol { name, qualified_name, kind, start_line, end_line }` and the trait `LanguageAnalyzer { fn symbols(&self, src: &str) -> Result<Vec<Symbol>, AnalysisError>; fn calls_in_range(&self, src: &str, range) -> Vec<String>; }` plus `analyzer_for_extension(ext) -> Option<Box<dyn LanguageAnalyzer>>` covering `.rs .swift .ts .tsx .js .jsx`
-- [ ] Implement the Rust analyzer with tree-sitter queries: `function_item`, `impl_item`→`function_item` (qualified `Type::method`), `struct_item`, `enum_item`, `trait_item`; nested functions attributed to the enclosing symbol (not emitted separately, their lines fold into the parent)
-- [ ] Implement `calls_in_range` for Rust over `call_expression` nodes, branching on the `function` field: an `identifier` yields that name, a `scoped_identifier` (e.g. `Type::new`) yields its final segment, and a `field_expression` (method call `x.foo()`) yields the `field_identifier` — tree-sitter-rust has no `method_call_expression` node; also collect `struct_expression` type names
-- [ ] Add fixtures under `tests/fixtures/rust/` (before/after pairs covering added fn, modified method in impl, deleted struct, nested fn)
-- [ ] Write unit tests asserting the exact symbol list (names, kinds, qualified names, line ranges) and extracted call names for each fixture, including a method call, a `Type::assoc()` call, and a plain function call
-- [ ] Run `cargo test` — must pass before Task 5
+- [x] Define `Symbol { name, qualified_name, kind, start_line, end_line }` and the trait `LanguageAnalyzer { fn symbols(&self, src: &str) -> Result<Vec<Symbol>, AnalysisError>; fn calls_in_range(&self, src: &str, range) -> Vec<String>; }` plus `analyzer_for_extension(ext) -> Option<Box<dyn LanguageAnalyzer>>` covering `.rs .swift .ts .tsx .js .jsx` (registry in place; `.rs` registered here, the Swift and TS/JS arms land with their analyzers in Tasks 5-6)
+- [x] Implement the Rust analyzer with tree-sitter queries: `function_item`, `impl_item`→`function_item` (qualified `Type::method`), `struct_item`, `enum_item`, `trait_item`; nested functions attributed to the enclosing symbol (not emitted separately, their lines fold into the parent)
+- [x] Implement `calls_in_range` for Rust over `call_expression` nodes, branching on the `function` field: an `identifier` yields that name, a `scoped_identifier` (e.g. `Type::new`) yields its final segment, and a `field_expression` (method call `x.foo()`) yields the `field_identifier` — tree-sitter-rust has no `method_call_expression` node; also collect `struct_expression` type names
+- [x] Add fixtures under `tests/fixtures/rust/` (before/after pairs covering added fn, modified method in impl, deleted struct, nested fn)
+- [x] Write unit tests asserting the exact symbol list (names, kinds, qualified names, line ranges) and extracted call names for each fixture, including a method call, a `Type::assoc()` call, and a plain function call
+- [x] Run `cargo test` — must pass before Task 5
 
 ### Task 5: Swift analyzer
 

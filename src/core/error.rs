@@ -4,7 +4,7 @@ use thiserror::Error;
 
 /// Anything that can go wrong while analyzing sources. The core never touches
 /// git, HTTP or the filesystem, so these are the only failure modes.
-#[derive(Debug, Error, PartialEq, Eq)]
+#[derive(Debug, Clone, Error, PartialEq, Eq)]
 pub enum AnalysisError {
     /// A tree-sitter parse produced no usable tree for `path`.
     #[error("failed to parse {path}: {reason}")]
@@ -17,6 +17,23 @@ pub enum AnalysisError {
     /// A line range is empty-in-the-wrong-direction or points past the source.
     #[error("invalid line range {start}..{end}")]
     InvalidRange { start: u32, end: u32 },
+}
+
+impl AnalysisError {
+    /// Re-label a parse failure with the file it came from.
+    ///
+    /// Analyzers only ever see source text, so they report the language they
+    /// were parsing as; the caller that owns the path swaps it in before the
+    /// message reaches a reviewer. Other variants are returned untouched.
+    pub fn with_path(self, path: impl Into<String>) -> Self {
+        match self {
+            Self::Parse { reason, .. } => Self::Parse {
+                path: path.into(),
+                reason,
+            },
+            other => other,
+        }
+    }
 }
 
 #[cfg(test)]
@@ -43,5 +60,21 @@ mod tests {
             AnalysisError::InvalidRange { start: 12, end: 4 }.to_string(),
             "invalid line range 12..4"
         );
+    }
+
+    #[test]
+    fn with_path_relabels_only_parse_failures() {
+        let relabeled = AnalysisError::Parse {
+            path: "rust".to_string(),
+            reason: "source contains syntax errors".to_string(),
+        }
+        .with_path("src/a.rs");
+        assert_eq!(
+            relabeled.to_string(),
+            "failed to parse src/a.rs: source contains syntax errors"
+        );
+
+        let untouched = AnalysisError::UnsupportedExtension("md".to_string());
+        assert_eq!(untouched.clone().with_path("src/a.rs"), untouched);
     }
 }

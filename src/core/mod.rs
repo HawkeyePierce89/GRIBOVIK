@@ -6,7 +6,9 @@
 
 pub mod diff;
 pub mod error;
+pub mod lang;
 pub mod snapshot;
 
 pub use error::AnalysisError;
+pub use lang::{analyzer_for_extension, LanguageAnalyzer, Symbol};
 pub use snapshot::{ChangeKind, Confidence, DiffLine, DiffTag, Edge, GraphSnapshot, Meta, Node};
