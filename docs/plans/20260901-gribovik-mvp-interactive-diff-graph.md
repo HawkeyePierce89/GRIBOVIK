@@ -69,12 +69,12 @@ web/
 - Create: `Cargo.toml`, `src/main.rs`, `src/core/mod.rs`, `src/core/error.rs`, `src/core/snapshot.rs`
 - Modify: `.gitignore`
 
-- [ ] Create the binary crate `gribovik` (edition 2021) with the Rust dependencies listed in Context; pin mutually compatible `tree-sitter` and grammar crate versions and confirm `cargo build` links all three grammars
-- [ ] Define serde types in `src/core/snapshot.rs`: `GraphSnapshot { meta, nodes, edges }`, `Meta { repo, base, head, files_changed, warnings: Vec<String> }`, `Node { id, file, name, kind, change, diff: Vec<DiffLine> }`, `DiffLine { tag, old_line: Option<u32>, new_line: Option<u32>, text }`, `Edge { from, to, confidence }`; enums `ChangeKind {Added,Modified,Deleted}`, `Confidence {Certain,Ambiguous}`, `DiffTag {Add,Del,Context}` serialized lowercase
-- [ ] Define `AnalysisError` in `src/core/error.rs` with `thiserror` (parse failure, unsupported extension, invalid range)
-- [ ] Add `web/node_modules`, `web/dist`, `.ralphex/` to `.gitignore`
-- [ ] Write tests: serde round-trip of a hand-built `GraphSnapshot` asserting exact JSON field names and enum spellings
-- [ ] Run `cargo test` — must pass before Task 2
+- [x] Create the binary crate `gribovik` (edition 2021) with the Rust dependencies listed in Context; pin mutually compatible `tree-sitter` and grammar crate versions and confirm `cargo build` links all three grammars
+- [x] Define serde types in `src/core/snapshot.rs`: `GraphSnapshot { meta, nodes, edges }`, `Meta { repo, base, head, files_changed, warnings: Vec<String> }`, `Node { id, file, name, kind, change, diff: Vec<DiffLine> }`, `DiffLine { tag, old_line: Option<u32>, new_line: Option<u32>, text }`, `Edge { from, to, confidence }`; enums `ChangeKind {Added,Modified,Deleted}`, `Confidence {Certain,Ambiguous}`, `DiffTag {Add,Del,Context}` serialized lowercase
+- [x] Define `AnalysisError` in `src/core/error.rs` with `thiserror` (parse failure, unsupported extension, invalid range)
+- [x] Add `web/node_modules`, `web/dist`, `.ralphex/` to `.gitignore`
+- [x] Write tests: serde round-trip of a hand-built `GraphSnapshot` asserting exact JSON field names and enum spellings
+- [x] Run `cargo test` — must pass before Task 2
 
 ### Task 2: Git CLI wrapper
 
