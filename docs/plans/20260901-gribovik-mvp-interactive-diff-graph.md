@@ -232,11 +232,11 @@ web/
 
 ### Task 15: Verify acceptance criteria
 
-- [ ] Run the full Rust suite: `cargo test`
-- [ ] Run the frontend suite: `npm test` in `web/`
-- [ ] Run linters: `cargo clippy --all-targets -- -D warnings`, `cargo fmt --check`, `tsc --noEmit`
-- [ ] Run `just build` and confirm `cargo build --release` produces a binary with embedded assets
-- [ ] Optional (only if `cargo llvm-cov --version` succeeds; skip and note it otherwise): measure `src/core/` coverage with `cargo llvm-cov --lib`, aiming for 80%+, and add tests for uncovered branches
+- [x] Run the full Rust suite: `cargo test` — 190 tests pass (162 lib, 17 git_cli, 3 grammars_link, 8 integration_repo)
+- [x] Run the frontend suite: `npm test` in `web/` — 26 tests pass across transform/review/layout
+- [x] Run linters: `cargo clippy --all-targets -- -D warnings`, `cargo fmt --check`, `tsc --noEmit` — all clean, no changes needed
+- [x] Run `just build` and confirm `cargo build --release` produces a binary with embedded assets — `just` is not installed on this machine, so the recipes were run verbatim (`npm ci && npm run build` in `web/`, then `cargo build --release`); the 13M binary contains the freshly hashed `assets/index-*.js|css`, and a smoke run against a temp repo served `/` (200, embedded index.html), `/assets/index-*.js` (200), `/api/graph` (real snapshot JSON) and the SPA fallback (200)
+- [x] Optional (only if `cargo llvm-cov --version` succeeds; skip and note it otherwise): measure `src/core/` coverage with `cargo llvm-cov --lib` — skipped: `cargo llvm-cov` is not installed (`error: no such command: llvm-cov`)
 
 ### Task 16: Update documentation
 
