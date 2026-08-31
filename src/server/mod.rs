@@ -1,0 +1,377 @@
+//! The local HTTP server the reviewer's browser talks to.
+//!
+//! The graph is computed once, before the server starts, and never changes
+//! while it runs — only the review state does. So the snapshot is shared
+//! immutably and the state sits behind a mutex, written through to disk on
+//! every mutation. A reviewer who kills the process mid-session loses nothing.
+//!
+//! The API is deliberately tiny: read the graph, read the state, replace the
+//! state. Replacing the whole object rather than patching single nodes keeps
+//! the client free of merge logic, and the payload is a few kilobytes at worst.
+
+pub mod assets;
+
+use std::net::{IpAddr, Ipv4Addr, SocketAddr};
+use std::path::PathBuf;
+use std::sync::{Arc, Mutex};
+
+use anyhow::{Context, Result};
+use axum::extract::{Path as AxumPath, State};
+use axum::http::StatusCode;
+use axum::response::{IntoResponse, Response};
+use axum::routing::get;
+use axum::{Json, Router};
+
+use crate::core::GraphSnapshot;
+use crate::review::{self, ReviewState};
+use crate::server::assets::Assets;
+
+/// The address the server binds to.
+///
+/// Loopback only: the graph carries a diff of unpushed work, and nothing about
+/// this tool wants that reachable from the rest of the network.
+const HOST: IpAddr = IpAddr::V4(Ipv4Addr::LOCALHOST);
+
+/// Everything the handlers share.
+#[derive(Debug)]
+pub struct AppState {
+    /// The analysis result, fixed for the lifetime of the process.
+    snapshot: GraphSnapshot,
+    /// The reviewer's verdicts, mutated by `POST /api/state`.
+    state: Mutex<ReviewState>,
+    /// Where those verdicts are persisted.
+    state_path: PathBuf,
+    /// Where the SPA's files come from.
+    assets: Assets,
+}
+
+impl AppState {
+    /// Assemble the shared state from an analysis result and a place to keep
+    /// the review in.
+    pub fn new(
+        snapshot: GraphSnapshot,
+        state: ReviewState,
+        state_path: PathBuf,
+        assets: Assets,
+    ) -> Self {
+        Self {
+            snapshot,
+            state: Mutex::new(state),
+            state_path,
+            assets,
+        }
+    }
+}
+
+/// Build the router. Split out from [`serve`] so tests can drive it in-process
+/// without binding a port.
+pub fn router(state: Arc<AppState>) -> Router {
+    Router::new()
+        .route("/api/graph", get(get_graph))
+        .route("/api/state", get(get_state).post(post_state))
+        .route("/", get(index))
+        .route("/{*path}", get(asset))
+        .with_state(state)
+}
+
+/// Serve until Ctrl+C, returning the address that was actually bound.
+///
+/// `port` 0 asks the OS for a free one, which is why the bound address is
+/// reported through `on_bind` rather than assumed by the caller.
+pub async fn serve(
+    state: Arc<AppState>,
+    port: u16,
+    on_bind: impl FnOnce(SocketAddr),
+) -> Result<()> {
+    let listener = tokio::net::TcpListener::bind(SocketAddr::new(HOST, port))
+        .await
+        .with_context(|| match port {
+            0 => "could not bind a local port".to_string(),
+            port => format!("could not bind port {port} — is something already using it?"),
+        })?;
+    let addr = listener
+        .local_addr()
+        .context("could not read the bound address")?;
+    on_bind(addr);
+
+    axum::serve(listener, router(state))
+        .with_graceful_shutdown(shutdown_signal())
+        .await
+        .context("server error")
+}
+
+/// Resolve on Ctrl+C. A failure to install the handler is not worth aborting a
+/// review over, so it degrades into "never shut down on a signal".
+async fn shutdown_signal() {
+    if tokio::signal::ctrl_c().await.is_err() {
+        std::future::pending::<()>().await;
+    }
+}
+
+/// `GET /api/graph` — the precomputed snapshot.
+async fn get_graph(State(state): State<Arc<AppState>>) -> Json<GraphSnapshot> {
+    Json(state.snapshot.clone())
+}
+
+/// `GET /api/state` — every verdict recorded so far.
+async fn get_state(State(state): State<Arc<AppState>>) -> Json<ReviewState> {
+    Json(state.state.lock().expect("review state mutex").clone())
+}
+
+/// `POST /api/state` — replace the whole state and write it to disk.
+///
+/// The response only reports whether the write succeeded; the client already
+/// knows what it sent, so there is nothing to echo back.
+async fn post_state(
+    State(state): State<Arc<AppState>>,
+    Json(incoming): Json<ReviewState>,
+) -> Response {
+    let to_save = {
+        let mut guard = state.state.lock().expect("review state mutex");
+        *guard = incoming;
+        guard.clone()
+    };
+
+    match review::save(&state.state_path, &to_save) {
+        Ok(()) => StatusCode::NO_CONTENT.into_response(),
+        Err(err) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            format!("could not save review state: {err:#}"),
+        )
+            .into_response(),
+    }
+}
+
+/// `GET /` — the SPA shell.
+async fn index(State(state): State<Arc<AppState>>) -> Response {
+    state.assets.respond("/")
+}
+
+/// `GET /*path` — an asset, or the SPA shell for a client-side route.
+async fn asset(State(state): State<Arc<AppState>>, AxumPath(path): AxumPath<String>) -> Response {
+    state.assets.respond(&path)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::core::snapshot::{ChangeKind, Confidence, DiffLine, DiffTag, Edge, Meta, Node};
+    use crate::review::{Comment, NodeReview, Status};
+    use axum::body::Body;
+    use axum::http::{header, Request};
+    use http_body_util::BodyExt;
+    use tempfile::TempDir;
+    use tower::ServiceExt;
+
+    fn snapshot() -> GraphSnapshot {
+        GraphSnapshot {
+            meta: Meta {
+                repo: "/tmp/repo".to_string(),
+                base: "abc123".to_string(),
+                head: "HEAD".to_string(),
+                files_changed: 1,
+                warnings: vec!["could not parse src/broken.rs".to_string()],
+            },
+            nodes: vec![Node {
+                id: "src/a.rs::alpha".to_string(),
+                file: "src/a.rs".to_string(),
+                name: "alpha".to_string(),
+                kind: "function".to_string(),
+                change: ChangeKind::Modified,
+                diff: vec![DiffLine {
+                    tag: DiffTag::Add,
+                    old_line: None,
+                    new_line: Some(2),
+                    text: "    beta();".to_string(),
+                }],
+            }],
+            edges: vec![Edge {
+                from: "src/a.rs::alpha".to_string(),
+                to: "src/b.rs::beta".to_string(),
+                confidence: Confidence::Certain,
+            }],
+        }
+    }
+
+    fn review() -> ReviewState {
+        let mut state = ReviewState::new();
+        state.insert(
+            "src/a.rs::alpha".to_string(),
+            NodeReview {
+                status: Status::Approved,
+                comments: vec![Comment {
+                    text: "fine".to_string(),
+                    created_at: "2026-09-01T10:00:00.000Z".to_string(),
+                }],
+            },
+        );
+        state
+    }
+
+    /// A router over a temp state file, plus the directory keeping it alive.
+    fn app(state: ReviewState) -> (TempDir, PathBuf, Router) {
+        let dir = TempDir::new().unwrap();
+        let path = review::state_path(dir.path(), "abc123", "HEAD");
+        let app_state = Arc::new(AppState::new(
+            snapshot(),
+            state,
+            path.clone(),
+            Assets::Embedded,
+        ));
+        (dir, path, router(app_state))
+    }
+
+    async fn get(app: &Router, uri: &str) -> Response {
+        app.clone()
+            .oneshot(Request::builder().uri(uri).body(Body::empty()).unwrap())
+            .await
+            .unwrap()
+    }
+
+    async fn post_json(app: &Router, uri: &str, body: String) -> Response {
+        app.clone()
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri(uri)
+                    .header(header::CONTENT_TYPE, "application/json")
+                    .body(Body::from(body))
+                    .unwrap(),
+            )
+            .await
+            .unwrap()
+    }
+
+    async fn body_bytes(response: Response) -> Vec<u8> {
+        response
+            .into_body()
+            .collect()
+            .await
+            .unwrap()
+            .to_bytes()
+            .to_vec()
+    }
+
+    async fn body_json<T: serde::de::DeserializeOwned>(response: Response) -> T {
+        serde_json::from_slice(&body_bytes(response).await).unwrap()
+    }
+
+    #[tokio::test]
+    async fn api_graph_returns_the_snapshot() {
+        let (_dir, _path, app) = app(ReviewState::new());
+
+        let response = get(&app, "/api/graph").await;
+
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(body_json::<GraphSnapshot>(response).await, snapshot());
+    }
+
+    #[tokio::test]
+    async fn api_state_starts_from_the_loaded_state() {
+        let (_dir, _path, app) = app(review());
+
+        let response = get(&app, "/api/state").await;
+
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(body_json::<ReviewState>(response).await, review());
+    }
+
+    #[tokio::test]
+    async fn posting_state_then_getting_it_round_trips() {
+        let (_dir, _path, app) = app(ReviewState::new());
+        let payload = serde_json::to_string(&review()).unwrap();
+
+        let posted = post_json(&app, "/api/state", payload).await;
+        assert_eq!(posted.status(), StatusCode::NO_CONTENT);
+
+        let fetched = get(&app, "/api/state").await;
+        assert_eq!(body_json::<ReviewState>(fetched).await, review());
+    }
+
+    #[tokio::test]
+    async fn posting_state_writes_the_file() {
+        let (_dir, path, app) = app(ReviewState::new());
+        assert!(!path.exists());
+
+        post_json(
+            &app,
+            "/api/state",
+            serde_json::to_string(&review()).unwrap(),
+        )
+        .await;
+
+        assert_eq!(review::load(&path), review());
+    }
+
+    #[tokio::test]
+    async fn posting_state_replaces_rather_than_merges() {
+        let (_dir, path, app) = app(review());
+
+        post_json(&app, "/api/state", "{}".to_string()).await;
+
+        assert_eq!(
+            body_json::<ReviewState>(get(&app, "/api/state").await).await,
+            ReviewState::new()
+        );
+        assert_eq!(review::load(&path), ReviewState::new());
+    }
+
+    #[tokio::test]
+    async fn malformed_state_is_rejected_without_touching_the_stored_state() {
+        let (_dir, path, app) = app(review());
+
+        let response = post_json(&app, "/api/state", "{\"a\": 5}".to_string()).await;
+
+        assert_eq!(response.status(), StatusCode::UNPROCESSABLE_ENTITY);
+        assert!(!path.exists(), "a rejected post must not write the file");
+        assert_eq!(
+            body_json::<ReviewState>(get(&app, "/api/state").await).await,
+            review()
+        );
+    }
+
+    #[tokio::test]
+    async fn the_root_serves_the_spa_shell() {
+        let (_dir, _path, app) = app(ReviewState::new());
+
+        let response = get(&app, "/").await;
+
+        assert_eq!(response.status(), StatusCode::OK);
+        let html = String::from_utf8(body_bytes(response).await).unwrap();
+        assert!(
+            html.contains("<div id=\"root\">"),
+            "unexpected body: {html}"
+        );
+    }
+
+    #[tokio::test]
+    async fn an_unknown_path_falls_back_to_index_html() {
+        let (_dir, _path, app) = app(ReviewState::new());
+
+        let index = body_bytes(get(&app, "/").await).await;
+        let response = get(&app, "/no/such/route").await;
+
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(body_bytes(response).await, index);
+    }
+
+    #[tokio::test]
+    async fn a_real_asset_is_served_with_its_own_content_type() {
+        let (_dir, _path, app) = app(ReviewState::new());
+        let index = String::from_utf8(body_bytes(get(&app, "/").await).await).unwrap();
+        let script = index
+            .split("src=\"")
+            .nth(1)
+            .and_then(|rest| rest.split('"').next())
+            .expect("index.html should reference a script");
+
+        let response = get(&app, script).await;
+
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(
+            response.headers().get(header::CONTENT_TYPE).unwrap(),
+            "text/javascript"
+        );
+        assert!(!body_bytes(response).await.is_empty());
+    }
+}

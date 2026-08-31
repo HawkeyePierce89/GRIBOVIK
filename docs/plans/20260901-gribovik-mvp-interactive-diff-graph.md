@@ -210,11 +210,11 @@ web/
 **Files:**
 - Create: `src/server/mod.rs`, `src/server/assets.rs`
 
-- [ ] Implement `assets.rs`: `rust-embed` over `web/dist` with SPA fallback to `index.html` and `mime_guess` content types; when `--assets <dir>` is given, serve from that directory on disk instead
-- [ ] Implement the axum router: `GET /` and `/*path` (assets), `GET /api/graph` (the precomputed snapshot), `GET /api/state`, `POST /api/state` (replace whole state, persist via `review::save`)
-- [ ] Share the snapshot and a `Mutex<ReviewState>` through axum state; bind to `--port` or port 0 and report the actually bound address; handle Ctrl+C via graceful shutdown
-- [ ] Write tests hitting the router in-process with `tower::ServiceExt::oneshot`: `/api/graph` returns the snapshot JSON, `POST /api/state` then `GET /api/state` round-trips and writes the file, unknown path falls back to `index.html`
-- [ ] Run `cargo test` — must pass before Task 14
+- [x] Implement `assets.rs`: `rust-embed` over `web/dist` with SPA fallback to `index.html` and `mime_guess` content types; when `--assets <dir>` is given, serve from that directory on disk instead
+- [x] Implement the axum router: `GET /` and `/*path` (assets), `GET /api/graph` (the precomputed snapshot), `GET /api/state`, `POST /api/state` (replace whole state, persist via `review::save`)
+- [x] Share the snapshot and a `Mutex<ReviewState>` through axum state; bind to `--port` or port 0 and report the actually bound address; handle Ctrl+C via graceful shutdown
+- [x] Write tests hitting the router in-process with `tower::ServiceExt::oneshot`: `/api/graph` returns the snapshot JSON, `POST /api/state` then `GET /api/state` round-trips and writes the file, unknown path falls back to `index.html`
+- [x] Run `cargo test` — must pass before Task 14
 
 ### Task 14: CLI wiring, build integration, error handling
 

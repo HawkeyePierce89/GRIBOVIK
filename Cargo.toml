@@ -21,4 +21,6 @@ tree-sitter-typescript = "0.23.2"
 webbrowser = "1.2.4"
 
 [dev-dependencies]
+http-body-util = "0.1.5"
 tempfile = "3.27.0"
+tower = { version = "0.5.3", features = ["util"] }

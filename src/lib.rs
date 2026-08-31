@@ -7,3 +7,4 @@ pub mod core;
 pub mod git;
 pub mod pipeline;
 pub mod review;
+pub mod server;
