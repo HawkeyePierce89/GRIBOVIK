@@ -240,8 +240,8 @@ web/
 
 ### Task 16: Update documentation
 
-- [ ] Update `README.md`: what GRIBOVIK does, install/build (`just build`), usage of all three invocation forms and flags, where review state is stored, supported languages
-- [ ] Create `CLAUDE.md`: crate layout, the core-purity rule (`src/core/` has no git/HTTP/filesystem access), the `thiserror`/`anyhow` split, the two-sided GraphSnapshot contract, and how to add a new `LanguageAnalyzer`
+- [x] Update `README.md`: what GRIBOVIK does, install/build (`just build`), usage of all three invocation forms and flags, where review state is stored, supported languages
+- [x] Create `CLAUDE.md`: crate layout, the core-purity rule (`src/core/` has no git/HTTP/filesystem access), the `thiserror`/`anyhow` split, the two-sided GraphSnapshot contract, and how to add a new `LanguageAnalyzer`
 
 ## Post-Completion Verification (manual)
 
