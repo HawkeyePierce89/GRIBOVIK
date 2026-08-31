@@ -185,12 +185,12 @@ web/
 **Files:**
 - Create: `web/package.json`, `web/tsconfig.json`, `web/vite.config.ts`, `web/index.html`, `web/src/main.tsx`, `web/src/types/snapshot.ts`, `web/src/lib/transform.ts`, `web/src/lib/layout.ts`, `web/src/lib/transform.test.ts`
 
-- [ ] Scaffold Vite + React + TypeScript (`strict: true`) with `@xyflow/react`, `elkjs`, `vitest`; add `npm run build` producing `web/dist` and `npm test`
-- [ ] Write `web/src/types/snapshot.ts` mirroring `src/core/snapshot.rs` exactly (`GraphSnapshot`, `SnapshotNode`, `SnapshotEdge`, `DiffLine`, `ReviewState`, `NodeReview`)
-- [ ] Implement `transform.ts`: `toFlow(snapshot) -> { nodes: Node[]; edges: Edge[] }` — node `type: "symbol"`, `data` carrying the snapshot node, edges with `animated: false` and `style.strokeDasharray` set for `ambiguous`, dropping edges whose endpoints are missing
-- [ ] Implement `layout.ts`: elkjs `layered` with `elk.direction: RIGHT`, returning positioned nodes
-- [ ] Write `transform.test.ts` (vitest): a fixture snapshot → expected React Flow nodes/edges, including dashed styling for ambiguous edges and dropping of dangling edges
-- [ ] Run `npm test` and `npm run build` in `web/` — both must pass before Task 12
+- [x] Scaffold Vite + React + TypeScript (`strict: true`) with `@xyflow/react`, `elkjs`, `vitest`; add `npm run build` producing `web/dist` and `npm test`
+- [x] Write `web/src/types/snapshot.ts` mirroring `src/core/snapshot.rs` exactly (`GraphSnapshot`, `SnapshotNode`, `SnapshotEdge`, `DiffLine`, `ReviewState`, `NodeReview`)
+- [x] Implement `transform.ts`: `toFlow(snapshot) -> { nodes: Node[]; edges: Edge[] }` — node `type: "symbol"`, `data` carrying the snapshot node, edges with `animated: false` and `style.strokeDasharray` set for `ambiguous`, dropping edges whose endpoints are missing
+- [x] Implement `layout.ts`: elkjs `layered` with `elk.direction: RIGHT`, returning positioned nodes
+- [x] Write `transform.test.ts` (vitest): a fixture snapshot → expected React Flow nodes/edges, including dashed styling for ambiguous edges and dropping of dangling edges
+- [x] Run `npm test` and `npm run build` in `web/` — both must pass before Task 12
 
 ### Task 12: Frontend UI — symbol cards, progress panel, state sync
 
