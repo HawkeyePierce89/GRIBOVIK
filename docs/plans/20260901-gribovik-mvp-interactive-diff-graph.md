@@ -198,12 +198,12 @@ web/
 - Create: `web/src/App.tsx`, `web/src/components/SymbolNode.tsx`, `web/src/components/DiffView.tsx`, `web/src/components/ProgressPanel.tsx`, `web/src/hooks/useReviewState.ts`, `web/src/styles.css`
 - Modify: `web/src/main.tsx`
 
-- [ ] Implement `App.tsx`: fetch `/api/graph` and `/api/state` on load, run elk layout, render `<ReactFlow>` with pan/zoom, `<MiniMap>`, `<Controls>`, and a warnings banner from `meta.warnings`
-- [ ] Implement `SymbolNode`: file path, symbol name, change badge (added/modified/deleted/file), `DiffView` with `+`/`-`/context line coloring and old/new line gutters (no syntax highlighting), approve/reject/pending buttons, comment list and add-comment input; approved nodes render at reduced opacity
-- [ ] Implement `useReviewState`: holds the whole `ReviewState`, POSTs the full object to `/api/state` on every mutation, and stamps `created_at` on new comments with `new Date().toISOString()`
-- [ ] Implement `ProgressPanel`: Approved/Rejected/Pending counters derived from state over current graph node ids; clicking a counter highlights the matching nodes (selected class / border emphasis) and clears the previous highlight
-- [ ] Write vitest tests for the counter-derivation and status-mutation helpers (pure functions extracted from the components), including nodes with no state entry counting as pending
-- [ ] Run `npm test` and `npm run build` — both must pass before Task 13
+- [x] Implement `App.tsx`: fetch `/api/graph` and `/api/state` on load, run elk layout, render `<ReactFlow>` with pan/zoom, `<MiniMap>`, `<Controls>`, and a warnings banner from `meta.warnings`
+- [x] Implement `SymbolNode`: file path, symbol name, change badge (added/modified/deleted/file), `DiffView` with `+`/`-`/context line coloring and old/new line gutters (no syntax highlighting), approve/reject/pending buttons, comment list and add-comment input; approved nodes render at reduced opacity
+- [x] Implement `useReviewState`: holds the whole `ReviewState`, POSTs the full object to `/api/state` on every mutation, and stamps `created_at` on new comments with `new Date().toISOString()`
+- [x] Implement `ProgressPanel`: Approved/Rejected/Pending counters derived from state over current graph node ids; clicking a counter highlights the matching nodes (selected class / border emphasis) and clears the previous highlight
+- [x] Write vitest tests for the counter-derivation and status-mutation helpers (pure functions extracted from the components), including nodes with no state entry counting as pending
+- [x] Run `npm test` and `npm run build` — both must pass before Task 13
 
 ### Task 13: HTTP server
 
