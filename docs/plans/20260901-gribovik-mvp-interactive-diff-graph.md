@@ -116,11 +116,11 @@ web/
 **Files:**
 - Create: `src/core/lang/swift.rs`, `tests/fixtures/swift/*`
 
-- [ ] Implement symbol extraction with tree-sitter-swift: `function_declaration`, methods inside `class_declaration`/struct/enum/extension (qualified `Type.method`), plus the type declarations themselves; attribute nested closures/functions to the parent
-- [ ] Implement `calls_in_range`: `call_expression` with `simple_identifier` and `navigation_expression` suffixes, returning the bare callee name
-- [ ] Add before/after fixtures covering a free function, a method in a class, an extension method, and a deleted struct
-- [ ] Write unit tests mirroring Task 4's assertions for Swift
-- [ ] Run `cargo test` — must pass before Task 6
+- [x] Implement symbol extraction with tree-sitter-swift: `function_declaration`, methods inside `class_declaration`/struct/enum/extension (qualified `Type.method`), plus the type declarations themselves; attribute nested closures/functions to the parent
+- [x] Implement `calls_in_range`: `call_expression` with `simple_identifier` and `navigation_expression` suffixes, returning the bare callee name
+- [x] Add before/after fixtures covering a free function, a method in a class, an extension method, and a deleted struct
+- [x] Write unit tests mirroring Task 4's assertions for Swift
+- [x] Run `cargo test` — must pass before Task 6
 
 ### Task 6: TypeScript/JavaScript analyzer
 

@@ -12,6 +12,10 @@ pub struct RustAnalyzer;
 /// How Rust spells qualification, both in `impl` blocks and modules.
 const SEPARATOR: &str = "::";
 
+/// Sibling kinds that belong to the declaration below them: attributes and the
+/// doc comments above an item.
+const PRELUDE_KINDS: &[&str] = &["attribute_item", "line_comment", "block_comment"];
+
 fn language() -> Language {
     tree_sitter_rust::LANGUAGE.into()
 }
@@ -102,29 +106,9 @@ fn push_symbol(node: Node, src: &str, prefix: &str, kind: &str, out: &mut Vec<Sy
         name: name.to_string(),
         qualified_name: join(prefix, name),
         kind: kind.to_string(),
-        start_line: leading_line(node),
+        start_line: lang::leading_line(node, PRELUDE_KINDS),
         end_line: lang::end_line(node),
     });
-}
-
-/// Where the symbol really starts: the first line of the run of doc comments
-/// and attributes immediately above it, so editing `#[derive(..)]` or a doc
-/// comment lands on the symbol rather than in the file-level catch-all.
-fn leading_line(node: Node) -> u32 {
-    let mut start = lang::start_line(node);
-    let mut current = node;
-    while let Some(previous) = current.prev_sibling() {
-        if !matches!(
-            previous.kind(),
-            "attribute_item" | "line_comment" | "block_comment"
-        ) || lang::end_line(previous) + 1 < start
-        {
-            break;
-        }
-        start = lang::start_line(previous);
-        current = previous;
-    }
-    start
 }
 
 /// The bare callee name of a call, or `None` for shapes we cannot attribute

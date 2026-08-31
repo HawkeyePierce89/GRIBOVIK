@@ -9,6 +9,7 @@
 //! (a nested `fn` folds into its parent instead of becoming its own node).
 
 pub mod rust;
+pub mod swift;
 
 use tree_sitter::{Language, Node, Tree};
 
@@ -29,6 +30,10 @@ pub struct Symbol {
     pub kind: String,
     /// 1-based, inclusive. Covers leading doc comments and attributes so that
     /// editing them counts as editing the symbol.
+    ///
+    /// Spans may nest: in languages that declare methods inside their type
+    /// (Swift, TS), the type's span contains its members' spans. Callers
+    /// attributing a line to a symbol should prefer the innermost match.
     pub start_line: u32,
     /// 1-based, inclusive.
     pub end_line: u32,
@@ -59,6 +64,7 @@ pub trait LanguageAnalyzer {
 pub fn analyzer_for_extension(ext: &str) -> Option<Box<dyn LanguageAnalyzer>> {
     match ext.trim_start_matches('.').to_ascii_lowercase().as_str() {
         "rs" => Some(Box::new(rust::RustAnalyzer)),
+        "swift" => Some(Box::new(swift::SwiftAnalyzer)),
         _ => None,
     }
 }
@@ -109,6 +115,25 @@ pub(crate) fn end_line(node: Node) -> u32 {
     }
 }
 
+/// Where a symbol really starts: the first line of the run of doc comments and
+/// attributes immediately above `node`, so that editing `#[derive(..)]` or a
+/// doc comment lands on the symbol rather than in the file-level catch-all.
+///
+/// `prelude_kinds` names the sibling node kinds that count as part of the
+/// preamble; a blank line between them and the declaration ends the run.
+pub(crate) fn leading_line(node: Node, prelude_kinds: &[&str]) -> u32 {
+    let mut start = start_line(node);
+    let mut current = node;
+    while let Some(previous) = current.prev_sibling() {
+        if !prelude_kinds.contains(&previous.kind()) || end_line(previous) + 1 < start {
+            break;
+        }
+        start = start_line(previous);
+        current = previous;
+    }
+    start
+}
+
 /// The source text a node spans.
 pub(crate) fn text<'a>(node: Node, src: &'a str) -> &'a str {
     node.utf8_text(src.as_bytes()).unwrap_or("")
@@ -150,9 +175,18 @@ mod tests {
     }
 
     #[test]
+    fn registry_resolves_swift_sources() {
+        let analyzer = analyzer_for_extension("swift").expect("`.swift` is supported");
+        let symbols = analyzer.symbols("func solo() {}\n").unwrap();
+        assert_eq!(symbols.len(), 1);
+        assert_eq!(symbols[0].name, "solo");
+    }
+
+    #[test]
     fn registry_accepts_a_leading_dot_and_mixed_case() {
         assert!(analyzer_for_extension(".rs").is_some());
         assert!(analyzer_for_extension("RS").is_some());
+        assert!(analyzer_for_extension(".Swift").is_some());
     }
 
     #[test]
