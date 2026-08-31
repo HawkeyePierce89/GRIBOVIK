@@ -174,11 +174,11 @@ web/
 **Files:**
 - Create: `src/review.rs`
 
-- [ ] Define `ReviewState = BTreeMap<String, NodeReview { status: Status, comments: Vec<Comment{text, created_at}> }>` with `Status {Approved, Rejected, Pending}` serialized lowercase; `created_at` is an opaque string supplied by the client
-- [ ] Implement `state_path(repo, base, head)` → `<repo>/.git/gribovik/<base>..<head>.json`, sanitizing `/` in revision names to `-`; create the directory on write
-- [ ] Implement `load(path) -> ReviewState` (missing/corrupt file → empty state, corrupt logged as a warning) and `save(path, &ReviewState)` writing atomically via temp file + rename
-- [ ] Write unit tests in a temp dir: save→load round trip, missing file, corrupt JSON, path construction for branch names containing slashes
-- [ ] Run `cargo test` — must pass before Task 11
+- [x] Define `ReviewState = BTreeMap<String, NodeReview { status: Status, comments: Vec<Comment{text, created_at}> }>` with `Status {Approved, Rejected, Pending}` serialized lowercase; `created_at` is an opaque string supplied by the client
+- [x] Implement `state_path(repo, base, head)` → `<repo>/.git/gribovik/<base>..<head>.json`, sanitizing `/` in revision names to `-`; create the directory on write
+- [x] Implement `load(path) -> ReviewState` (missing/corrupt file → empty state, corrupt logged as a warning) and `save(path, &ReviewState)` writing atomically via temp file + rename
+- [x] Write unit tests in a temp dir: save→load round trip, missing file, corrupt JSON, path construction for branch names containing slashes
+- [x] Run `cargo test` — must pass before Task 11
 
 ### Task 11: Frontend scaffold, contract types, and transform
 
