@@ -222,13 +222,13 @@ web/
 - Create: `src/cli.rs`, `build.rs`, `justfile`
 - Modify: `src/main.rs`, `Cargo.toml`
 
-- [ ] Define clap args: optional positional `base` and `head`, `--port`, `--no-open`, `--assets <dir>`
-- [ ] Wire `main.rs`: discover repo → resolve revisions → `pipeline::analyze` → on empty diff print "no changes" and exit 0 without starting the server → otherwise load review state, start the server, print the URL, open the browser unless `--no-open`, and exit 0 on Ctrl+C
-- [ ] Map all `anyhow` errors to a single human-readable stderr line and exit code 1 (not a git repo, missing origin/master|main, unknown revision, port in use)
-- [ ] Add `build.rs` that fails with a clear message ("run `just build-web` first") unless `web/dist/index.html` exists, with `cargo:rerun-if-changed=web/dist`
-- [ ] Add a `justfile` with `build-web` (`npm ci && npm run build` in `web/`), `build` (`build-web` + `cargo build --release`), and `test` (`cargo test` + `npm test`)
-- [ ] Write tests: clap argument parsing for the zero/one/two-positional forms and flag defaults; a temp-repo test asserting the empty-diff path returns the "no changes" outcome without binding a port
-- [ ] Run `cargo test` — must pass before Task 15
+- [x] Define clap args: optional positional `base` and `head`, `--port`, `--no-open`, `--assets <dir>`
+- [x] Wire `main.rs`: discover repo → resolve revisions → `pipeline::analyze` → on empty diff print "no changes" and exit 0 without starting the server → otherwise load review state, start the server, print the URL, open the browser unless `--no-open`, and exit 0 on Ctrl+C
+- [x] Map all `anyhow` errors to a single human-readable stderr line and exit code 1 (not a git repo, missing origin/master|main, unknown revision, port in use)
+- [x] Add `build.rs` that fails with a clear message ("run `just build-web` first") unless `web/dist/index.html` exists, with `cargo:rerun-if-changed=web/dist`
+- [x] Add a `justfile` with `build-web` (`npm ci && npm run build` in `web/`), `build` (`build-web` + `cargo build --release`), and `test` (`cargo test` + `npm test`)
+- [x] Write tests: clap argument parsing for the zero/one/two-positional forms and flag defaults; a temp-repo test asserting the empty-diff path returns the "no changes" outcome without binding a port
+- [x] Run `cargo test` — must pass before Task 15
 
 ### Task 15: Verify acceptance criteria
 
