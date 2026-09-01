@@ -32,3 +32,71 @@ jobs:
             version="$(git rev-parse --short HEAD)"
           fi
           echo "version=$version" >> "$GITHUB_OUTPUT"
+
+  build:
+    needs: guard
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: x86_64-unknown-linux-gnu
+            os: ubuntu-latest
+          - target: aarch64-unknown-linux-gnu
+            os: ubuntu-24.04-arm
+          - target: aarch64-apple-darwin
+            os: macos-latest
+          - target: x86_64-apple-darwin
+            os: macos-15-intel
+          - target: x86_64-pc-windows-msvc
+            os: windows-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - name: Build web
+        working-directory: web
+        run: npm ci && npm run build
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          toolchain: stable
+      - name: Verify native target
+        shell: bash
+        env:
+          TARGET: ${{ matrix.target }}
+        run: |
+          host=$(rustc -vV | sed -n 's/^host: //p')
+          if [ "$host" != "$TARGET" ]; then
+            echo "::error::Host $host does not match expected target $TARGET"
+            exit 1
+          fi
+      - name: Build Rust binary
+        run: cargo build --release --locked
+      - name: Package (Unix)
+        if: runner.os != 'Windows'
+        shell: bash
+        env:
+          VERSION: ${{ needs.guard.outputs.version }}
+          TARGET: ${{ matrix.target }}
+        run: |
+          NAME="gribovik-${VERSION}-${TARGET}"
+          mkdir -p dist
+          tar -czf "dist/${NAME}.tar.gz" -C target/release gribovik
+      - name: Package (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        env:
+          VERSION: ${{ needs.guard.outputs.version }}
+          TARGET: ${{ matrix.target }}
+        run: |
+          $env:NAME = "gribovik-$env:VERSION-$env:TARGET"
+          New-Item -ItemType Directory -Force dist
+          Compress-Archive -Path target/release/gribovik.exe -DestinationPath "dist/$env:NAME.zip"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: gribovik-${{ matrix.target }}
+          path: dist/*
+          if-no-files-found: error

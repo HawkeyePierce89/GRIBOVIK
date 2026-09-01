@@ -110,7 +110,7 @@ changes.
 **Files:**
 - Modify: `.github/workflows/release.yml`
 
-- [ ] Add job `build` with `needs: guard`, `runs-on: ${{ matrix.os }}`,
+- [x] Add job `build` with `needs: guard`, `runs-on: ${{ matrix.os }}`,
       `strategy.fail-fast: false` (a failing target should not hide the other
       four; the release job is still blocked by `needs`, so there is no partial
       release either way), and `strategy.matrix.include` of exactly five
@@ -119,7 +119,7 @@ changes.
       `aarch64-apple-darwin`/`macos-latest`,
       `x86_64-apple-darwin`/`macos-15-intel`,
       `x86_64-pc-windows-msvc`/`windows-latest`.
-- [ ] Steps, in the order `just build` uses:
+- [x] Steps, in the order `just build` uses:
       1. `actions/checkout@v7`;
       2. `actions/setup-node@v7` with `node-version: '22'`, `cache: npm`,
          `cache-dependency-path: web/package-lock.json`;
@@ -132,7 +132,7 @@ changes.
          `$TARGET` (passed via `env: TARGET: ${{ matrix.target }}`), erroring
          with `::error::` on mismatch;
       6. `cargo build --release --locked`.
-- [ ] Add two mutually exclusive packaging steps that write into `dist/`, named
+- [x] Add two mutually exclusive packaging steps that write into `dist/`, named
       `gribovik-${VERSION}-${TARGET}` where `VERSION` is
       `${{ needs.guard.outputs.version }}` and `TARGET` is `${{ matrix.target }}`,
       both passed through `env:` rather than interpolated into the script body:
@@ -147,14 +147,14 @@ changes.
         which avoids assuming `7z` or a bsdtar-flavoured `tar` on the Windows
         image. Every *other* multi-line snippet in the file carries an explicit
         `shell: bash`, because the Windows runner's default is `pwsh`.
-- [ ] Add `actions/upload-artifact@v7` with
+- [x] Add `actions/upload-artifact@v7` with
       `name: gribovik-${{ matrix.target }}` (artifact names must be unique per
       job under the v4+ backend), `path: dist/*`, and
       `if-no-files-found: error` so a silently empty archive fails the job.
 - [x] Verify: `actionlint .github/workflows/release.yml` exits 0 — this catches
       an unknown runner label, a bad `needs.guard.outputs.version` reference, and
       any shellcheck complaint in the new `run:` bodies.
-- [ ] Verify: `bash -n` each new bash snippet, and sanity-check the tar
+- [x] Verify: `bash -n` each new bash snippet, and sanity-check the tar
       invocation locally against a throwaway file to confirm the archive holds a
       bare `gribovik` entry with no directory prefix.
 
