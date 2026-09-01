@@ -9,7 +9,9 @@
 import ELK from "elkjs/lib/elk.bundled.js";
 import type { Edge } from "@xyflow/react";
 
+import { reviewFor } from "./review";
 import type { SymbolFlowNode } from "./transform";
+import type { ReviewState } from "../types/snapshot";
 
 /** Card width, fixed by `.symbol-node` in the stylesheet. */
 export const NODE_WIDTH = 420;
@@ -24,6 +26,10 @@ const CARD_CHROME_HEIGHT = 176;
 const DIFF_LINE_HEIGHT = 18;
 /** `.diff` scrolls past `max-height: 16rem`, so taller cards do not exist. */
 const MAX_DIFF_HEIGHT = 256;
+/** A `.comments li` is a timestamp line over a text line. */
+const COMMENT_HEIGHT = 34;
+/** `.comments` scrolls past `max-height: 8rem`. */
+const MAX_COMMENTS_HEIGHT = 128;
 
 const elk = new ELK();
 
@@ -39,11 +45,22 @@ const LAYOUT_OPTIONS: Record<string, string> = {
  * How tall a card will render. A card's height is driven by how many diff
  * lines it carries, and telling elk that one card is 200px and another 430px
  * is what keeps a long diff from being drawn over its neighbour.
+ *
+ * `state` is the review the cards will render with — comments are part of the
+ * card, so reopening a review that already has some makes every commented card
+ * taller than a diff-only estimate predicts, and elk stacks them into each
+ * other. It defaults to empty for a first run, where no card has comments yet.
  */
-export function nodeHeight(node: SymbolFlowNode): number {
+export function nodeHeight(
+  node: SymbolFlowNode,
+  state: ReviewState = {},
+): number {
   const lines = node.data.snapshot.diff.length;
+  const comments = reviewFor(state, node.id).comments.length;
   return (
-    CARD_CHROME_HEIGHT + Math.min(lines * DIFF_LINE_HEIGHT, MAX_DIFF_HEIGHT)
+    CARD_CHROME_HEIGHT +
+    Math.min(lines * DIFF_LINE_HEIGHT, MAX_DIFF_HEIGHT) +
+    Math.min(comments * COMMENT_HEIGHT, MAX_COMMENTS_HEIGHT)
   );
 }
 
@@ -54,6 +71,7 @@ export function nodeHeight(node: SymbolFlowNode): number {
 export async function layout(
   nodes: SymbolFlowNode[],
   edges: Edge[],
+  state: ReviewState = {},
 ): Promise<SymbolFlowNode[]> {
   if (nodes.length === 0) return [];
 
@@ -63,7 +81,7 @@ export async function layout(
     children: nodes.map((node) => ({
       id: node.id,
       width: NODE_WIDTH,
-      height: nodeHeight(node),
+      height: nodeHeight(node, state),
     })),
     edges: edges.map((edge) => ({
       id: edge.id,

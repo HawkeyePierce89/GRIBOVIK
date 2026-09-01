@@ -168,7 +168,10 @@ cd web && npm test && npm run typecheck
 
 While iterating on the UI, run `cargo run -- --assets web/dist` (or point
 `--assets` at any `vite build` output) so the server reads the SPA from disk
-instead of the embedded copy.
+instead of the embedded copy. To use Vite's dev server, start gribovik on the
+port `web/vite.config.ts` proxies `/api` to — `cargo run -- --port 7777
+--assets web/dist`, then `npm run dev` — since the default `--port 0` picks a
+port the proxy has no way to guess.
 
 See `CLAUDE.md` for the crate layout and the rules the codebase holds itself
 to.

@@ -13,7 +13,7 @@
 use std::collections::HashMap;
 
 use crate::core::lang::{analyzer_for_extension, LanguageAnalyzer, Symbol};
-use crate::core::nodes::{extension, FileInput, FILE_KIND};
+use crate::core::nodes::{extension, occurrence_of, FileInput, FILE_KIND};
 use crate::core::snapshot::{ChangeKind, Confidence, Edge, Node};
 
 /// Resolve the calls between `nodes`, which must be the cards `build_nodes`
@@ -140,8 +140,8 @@ fn directory(path: &str) -> &str {
 struct Analyzed<'a> {
     file: &'a FileInput,
     analyzer: Box<dyn LanguageAnalyzer>,
-    old: HashMap<String, Symbol>,
-    new: HashMap<String, Symbol>,
+    old: HashMap<String, Vec<Symbol>>,
+    new: HashMap<String, Vec<Symbol>>,
 }
 
 impl<'a> Analyzed<'a> {
@@ -159,12 +159,17 @@ impl<'a> Analyzed<'a> {
 
     /// Pair a card with the revision it should be read from: a deleted symbol
     /// only exists in the base revision, everything else in the head.
+    ///
+    /// A qualified name can be declared more than once in a file, and the card
+    /// says which declaration it is only through its id — so the occurrence has
+    /// to be carried into the lookup. Resolving every `S::fmt` to the first one
+    /// would read the wrong body and draw an arrow the code does not contain.
     fn callable<'s>(&'s self, node: &'s Node) -> Option<Callable<'s>> {
         let (symbols, src) = match node.change {
             ChangeKind::Deleted => (&self.old, self.file.old.as_deref()),
             _ => (&self.new, self.file.new.as_deref()),
         };
-        let symbol = symbols.get(&node.name)?;
+        let symbol = symbols.get(&node.name)?.get(occurrence_of(node))?;
         Some(Callable {
             node,
             name: symbol.name.as_str(),
@@ -186,15 +191,22 @@ struct Callable<'a> {
     analyzer: &'a dyn LanguageAnalyzer,
 }
 
-/// Index one side's symbols by qualified name; first declaration wins, as in
-/// node construction. An unparsable side simply has no symbols.
-fn side_symbols(analyzer: &dyn LanguageAnalyzer, src: Option<&str>) -> HashMap<String, Symbol> {
+/// Index one side's symbols by qualified name, keeping every declaration in
+/// source order rather than letting the first one win — the same indexing node
+/// construction does, so the *n*-th card of a name lines up with the *n*-th
+/// symbol here. An unparsable side simply has no symbols.
+fn side_symbols(
+    analyzer: &dyn LanguageAnalyzer,
+    src: Option<&str>,
+) -> HashMap<String, Vec<Symbol>> {
     let Some(symbols) = src.and_then(|src| analyzer.symbols(src).ok()) else {
         return HashMap::new();
     };
-    let mut out = HashMap::new();
+    let mut out: HashMap<String, Vec<Symbol>> = HashMap::new();
     for symbol in symbols {
-        out.entry(symbol.qualified_name.clone()).or_insert(symbol);
+        out.entry(symbol.qualified_name.clone())
+            .or_default()
+            .push(symbol);
     }
     out
 }
@@ -232,6 +244,38 @@ mod tests {
         assert_eq!(
             edges_of(&[FileInput::added("src/a.rs", source)]),
             vec!["src/a.rs::caller -> src/a.rs::helper (certain)"]
+        );
+    }
+
+    /// Two `impl` blocks can declare the same `S::go`. The cards are told
+    /// apart by the `#n` suffix on their ids, and each one has to be read from
+    /// its own body: resolving both to the first declaration invents an arrow
+    /// for the twin and loses the one it really has.
+    #[test]
+    fn repeated_qualified_names_resolve_from_their_own_body() {
+        let source = "\
+impl S {
+    fn go(&self) {
+        alpha();
+    }
+}
+
+impl S {
+    fn go(&self) {
+        beta();
+    }
+}
+
+fn alpha() {}
+
+fn beta() {}
+";
+        assert_eq!(
+            edges_of(&[FileInput::added("src/s.rs", source)]),
+            vec![
+                "src/s.rs::S::go -> src/s.rs::alpha (certain)",
+                "src/s.rs::S::go#2 -> src/s.rs::beta (certain)",
+            ]
         );
     }
 

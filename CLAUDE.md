@@ -24,7 +24,7 @@ src/
     mod.rs               # build_snapshot(): the core's single entry point
     error.rs             # AnalysisError (thiserror)
     snapshot.rs          # the wire contract
-    diff.rs              # line_diff / hunks / slice_diff over `similar`
+    diff.rs              # LineRange, line_diff / slice_diff over `similar`
     nodes.rs             # symbols x hunks -> cards
     edges.rs             # call-name resolution
     lang/mod.rs          # LanguageAnalyzer trait + extension registry
@@ -165,9 +165,17 @@ hand: in a linked worktree or a submodule that path is a file, not a directory.
 ## Working on the frontend
 
 `cargo run -- --assets web/dist` serves the SPA from disk instead of the copy
-baked into the binary, so a `vite build` (or `npm run dev`'s output) is picked
-up without recompiling Rust. `build.rs` still needs `web/dist/index.html` to
-exist for the crate to compile at all.
+baked into the binary, so a `vite build` is picked up without recompiling Rust.
+`build.rs` still needs `web/dist/index.html` to exist for the crate to compile
+at all.
+
+For `npm run dev` instead, the server has to be on the port
+`web/vite.config.ts` proxies `/api` to — `--port` defaults to 0, which is an
+OS-assigned port the proxy cannot find:
+
+```sh
+cargo run -- --port 7777 --assets web/dist   # then npm run dev in web/
+```
 
 ## Checks before calling anything done
 

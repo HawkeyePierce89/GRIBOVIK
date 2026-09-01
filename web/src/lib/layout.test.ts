@@ -94,6 +94,36 @@ describe("layout", () => {
     }
   });
 
+  it("grows a card's height with the comments already saved on it", async () => {
+    const snapshot = chain();
+    snapshot.edges = [];
+    const { nodes, edges } = toFlow(snapshot);
+    const commented = {
+      "a::caller": {
+        status: "pending" as const,
+        comments: Array.from({ length: 3 }, () => ({
+          text: "why this?",
+          created_at: "2026-09-01T00:00:00Z",
+        })),
+      },
+    };
+
+    expect(nodeHeight(nodes[0]!, commented)).toBeGreaterThan(
+      nodeHeight(nodes[0]!),
+    );
+
+    // Reopening a review must not stack a commented card into its neighbour:
+    // laying out with an empty state is exactly what does that.
+    const placed = await layout(nodes, edges, commented);
+    const column = [...placed].sort((a, b) => a.position.y - b.position.y);
+    for (let i = 1; i < column.length; i += 1) {
+      const above = column[i - 1]!;
+      expect(column[i]!.position.y).toBeGreaterThanOrEqual(
+        above.position.y + nodeHeight(above, commented),
+      );
+    }
+  });
+
   it("returns nothing for an empty graph", async () => {
     expect(await layout([], [])).toEqual([]);
   });

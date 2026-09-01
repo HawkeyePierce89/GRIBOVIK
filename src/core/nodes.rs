@@ -226,14 +226,7 @@ fn symbol_node(
     nth: usize,
     diff: Vec<DiffLine>,
 ) -> Node {
-    // The first declaration of a name keeps the plain id, so the overwhelming
-    // majority of nodes — and the review state keyed on them — are unaffected
-    // by the existence of this suffix.
-    let suffix = if nth == 0 {
-        String::new()
-    } else {
-        format!("#{}", nth + 1)
-    };
+    let suffix = occurrence_suffix(nth);
     Node {
         id: format!("{}::{}{suffix}", file.path, symbol.qualified_name),
         file: file.path.clone(),
@@ -242,6 +235,36 @@ fn symbol_node(
         change,
         diff,
     }
+}
+
+/// The `#n` suffix that keeps repeated qualified names apart in node ids, for
+/// the 0-based `nth` occurrence of a name.
+///
+/// The first declaration keeps the plain id, so the overwhelming majority of
+/// nodes — and the review state keyed on them — are unaffected by the
+/// existence of this suffix.
+fn occurrence_suffix(nth: usize) -> String {
+    if nth == 0 {
+        String::new()
+    } else {
+        format!("#{}", nth + 1)
+    }
+}
+
+/// Recover the 0-based occurrence index that [`occurrence_suffix`] encoded in a
+/// symbol node's id.
+///
+/// The id is the only place the occurrence survives — `name` stays the plain
+/// qualified name for every twin — so anything that needs to know *which*
+/// `S::fmt` a card is has to read it back from here. A file-level node, or any
+/// id without a suffix, is the first occurrence.
+pub fn occurrence_of(node: &Node) -> usize {
+    let prefix = format!("{}::{}", node.file, node.name);
+    node.id
+        .strip_prefix(&prefix)
+        .and_then(|rest| rest.strip_prefix('#'))
+        .and_then(|nth| nth.parse::<usize>().ok())
+        .map_or(0, |nth| nth.saturating_sub(1))
 }
 
 /// The catch-all card: the file itself, named by its path.

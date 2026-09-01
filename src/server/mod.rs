@@ -17,7 +17,7 @@ use std::sync::{Arc, Mutex};
 
 use anyhow::{Context, Result};
 use axum::extract::{Path as AxumPath, State};
-use axum::http::StatusCode;
+use axum::http::{HeaderValue, StatusCode};
 use axum::response::{IntoResponse, Response};
 use axum::routing::get;
 use axum::{Json, Router};
@@ -83,7 +83,27 @@ pub fn router(state: Arc<AppState>) -> Router {
         .route("/", get(index))
         .route("/{*path}", get(asset))
         .layer(axum::middleware::from_fn(reject_foreign_host))
+        .layer(axum::middleware::from_fn(deny_framing))
         .with_state(state)
+}
+
+/// Forbid every response from being framed.
+///
+/// The `Host` check turns away an attacker's domain that resolves to loopback,
+/// but a page on any origin may still put `http://127.0.0.1:<port>/` in an
+/// iframe — the browser sends a loopback `Host` for that, so it passes. The
+/// framed page cannot be read cross-origin, but its Approve and Reject buttons
+/// can be clicked through, which is enough to falsify a review.
+async fn deny_framing(request: axum::extract::Request, next: axum::middleware::Next) -> Response {
+    let mut response = next.run(request).await;
+    response.headers_mut().insert(
+        axum::http::header::CONTENT_SECURITY_POLICY,
+        HeaderValue::from_static("frame-ancestors 'none'"),
+    );
+    response
+        .headers_mut()
+        .insert("x-frame-options", HeaderValue::from_static("DENY"));
+    response
 }
 
 /// Hostnames a browser may legitimately have used to reach a loopback server.
@@ -360,6 +380,24 @@ mod tests {
 
             assert_eq!(response.status(), StatusCode::OK, "rejected host {host}");
         }
+    }
+
+    /// A loopback `Host` is what a browser sends for an iframe pointed at this
+    /// server, so the `Host` check cannot see clickjacking; the headers can.
+    #[tokio::test]
+    async fn responses_refuse_to_be_framed() {
+        let (_dir, _path, app) = app(ReviewState::new());
+
+        let response = get(&app, "/").await;
+
+        assert_eq!(
+            response.headers().get(header::CONTENT_SECURITY_POLICY),
+            Some(&HeaderValue::from_static("frame-ancestors 'none'"))
+        );
+        assert_eq!(
+            response.headers().get("x-frame-options"),
+            Some(&HeaderValue::from_static("DENY"))
+        );
     }
 
     #[tokio::test]

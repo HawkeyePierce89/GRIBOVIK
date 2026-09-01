@@ -59,7 +59,9 @@ export function App() {
           getJson<ReviewState>("/api/state"),
         ]);
         const flow = toFlow(snapshot);
-        const nodes = await layout(flow.nodes, flow.edges);
+        // Laying out with the saved state, not an empty one: cards that
+        // already carry comments render taller than their diff alone implies.
+        const nodes = await layout(flow.nodes, flow.edges, initialState);
         if (cancelled) return;
         setLoaded({ snapshot, nodes, edges: flow.edges, initialState });
       } catch (cause: unknown) {
