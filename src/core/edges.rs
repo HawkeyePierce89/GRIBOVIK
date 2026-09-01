@@ -47,10 +47,11 @@ pub fn build_edges(files: &[FileInput], nodes: &[Node]) -> Vec<Edge> {
         index.entry(callable.name).or_default().push(i);
     }
 
+    let calls = calls_per_callable(&callables);
+
     let mut edges = Vec::new();
-    for caller in &callables {
-        let calls = caller.analyzer.calls_in_span(caller.src, &caller.span);
-        for call in &calls {
+    for (caller_index, caller) in callables.iter().enumerate() {
+        for call in &calls[caller_index] {
             let Some(candidates) = index.get(call.as_str()) else {
                 continue;
             };
@@ -142,21 +143,61 @@ fn resolve(caller: &Callable, candidates: &[usize], callables: &[Callable]) -> V
     }
 }
 
+/// The callee names each callable invokes, indexed like `callables`.
+///
+/// Callables sharing a file *and* a revision are asked together, so each of the
+/// two sides of a file is parsed and walked once no matter how many symbols it
+/// declares. Asking one span at a time is a parse and a full tree walk per
+/// card, which is quadratic in a file's symbol count and turns a single
+/// generated file with a few thousand functions into tens of seconds of silence
+/// before the server binds.
+///
+/// The grouping order does not reach the output: results are written back into
+/// per-callable slots, and edges are still emitted in caller order.
+fn calls_per_callable(callables: &[Callable]) -> Vec<Vec<String>> {
+    // Keyed by path and side, the same split `Analyzed::callable` makes: a
+    // deleted symbol is read from the base revision, everything else from the
+    // head, and the two revisions of a file are different sources.
+    let mut groups: HashMap<(&str, bool), Vec<usize>> = HashMap::new();
+    for (i, callable) in callables.iter().enumerate() {
+        let deleted = callable.node.change == ChangeKind::Deleted;
+        groups
+            .entry((callable.node.file.as_str(), deleted))
+            .or_default()
+            .push(i);
+    }
+
+    let mut calls = vec![Vec::new(); callables.len()];
+    for members in groups.into_values() {
+        let first = &callables[members[0]];
+        let spans: Vec<&Span> = members.iter().map(|&i| &callables[i].span).collect();
+        let found = first.analyzer.calls_in_spans(first.src, &spans);
+        for (&i, names) in members.iter().zip(found) {
+            calls[i] = names;
+        }
+    }
+    calls
+}
+
 /// Collapse repeated `(from, to)` pairs, keeping the first position and the
 /// strongest confidence seen for the pair.
 fn dedup(edges: Vec<Edge>) -> Vec<Edge> {
+    // Indexed rather than rescanned: an ordinary branch already produces a
+    // thousand edges, and a linear search per edge is half a million string
+    // comparisons for a step that decides nothing.
+    let mut seen: HashMap<(String, String), usize> = HashMap::new();
     let mut out: Vec<Edge> = Vec::with_capacity(edges.len());
     for edge in edges {
-        match out
-            .iter_mut()
-            .find(|kept| kept.from == edge.from && kept.to == edge.to)
-        {
-            Some(kept) => {
+        match seen.get(&(edge.from.clone(), edge.to.clone())) {
+            Some(&kept) => {
                 if edge.confidence == Confidence::Certain {
-                    kept.confidence = Confidence::Certain;
+                    out[kept].confidence = Confidence::Certain;
                 }
             }
-            None => out.push(edge),
+            None => {
+                seen.insert((edge.from.clone(), edge.to.clone()), out.len());
+                out.push(edge);
+            }
         }
     }
     out

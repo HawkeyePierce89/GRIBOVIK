@@ -26,6 +26,9 @@ export type ReviewApi = {
   state: ReviewState;
   setStatus: (id: string, status: Status) => void;
   addComment: (id: string, text: string) => void;
+  /** The comment a reviewer has started typing on a card, `""` if none. */
+  getDraft: (id: string) => string;
+  setDraft: (id: string, text: string) => void;
   /** Set when the last POST failed, so the UI can say so instead of lying. */
   error: string | null;
 };
@@ -92,13 +95,28 @@ export function useReviewState(initial: ReviewState): ReviewApi {
     [apply],
   );
 
+  // Half-written comments, held outside the card that renders them.
+  //
+  // `onlyRenderVisibleElements` unmounts a card the moment it leaves the
+  // viewport, taking any state the card owns with it — a reviewer mid-sentence
+  // who pans the canvas would lose what they had typed, with nothing to say it
+  // had happened. A ref rather than state on purpose: a draft is read once when
+  // a card mounts and written on every keystroke, and putting it in the context
+  // value would re-render every card on the canvas per character typed.
+  const drafts = useRef(new Map<string, string>());
+  const getDraft = useCallback((id: string) => drafts.current.get(id) ?? "", []);
+  const setDraft = useCallback((id: string, text: string) => {
+    if (text === "") drafts.current.delete(id);
+    else drafts.current.set(id, text);
+  }, []);
+
   // Memoized because `App` builds the context value from this object: a fresh
   // literal every render makes the context value fresh every render too, and a
   // context change bypasses React Flow's node memoization — every card would
   // re-render on every pan, drag and selection, not just on a verdict.
   return useMemo(
-    () => ({ state, setStatus, addComment, error }),
-    [state, setStatus, addComment, error],
+    () => ({ state, setStatus, addComment, getDraft, setDraft, error }),
+    [state, setStatus, addComment, getDraft, setDraft, error],
   );
 }
 
@@ -117,6 +135,8 @@ export const ReviewContext = createContext<ReviewContextValue>({
   state: {},
   setStatus: noop,
   addComment: noop,
+  getDraft: () => "",
+  setDraft: noop,
   error: null,
   highlighted: new Set<string>(),
 });

@@ -243,8 +243,8 @@ fn spans(symbols: &[Symbol]) -> Vec<Span> {
     (0..symbols.len()).map(|i| carve(symbols, i)).collect()
 }
 
-/// The span the symbol at `index` claims among `symbols` — every symbol
-/// declared inside it subtracted from its own range.
+/// The span the symbol at `index` claims among `symbols` — its own range, minus
+/// every line another symbol has a better claim on.
 ///
 /// Shared with edge resolution so that the lines a card draws arrows from are
 /// the same lines it shows: a Swift or TypeScript type whose span contains its
@@ -254,10 +254,35 @@ pub fn carve(symbols: &[Symbol], index: usize) -> Span {
     let inner: Vec<LineRange> = symbols
         .iter()
         .enumerate()
-        .filter(|&(i, other)| nests_within((i, other.range()), (index, outer)))
-        .map(|(_, other)| other.range())
+        .filter(|&(i, _)| i != index)
+        .filter_map(|(i, other)| ceded_to((index, outer), (i, other.range())))
         .collect();
     Span::new(outer, inner)
+}
+
+/// The lines `outer` gives up to `other`, if any, each symbol given as its
+/// position in the analyzer's source-order list paired with its line range.
+///
+/// Containment is the common case and [`nests_within`] decides it. What is left
+/// is a partial overlap — the ranges share lines but neither declaration is
+/// inside the other — which is what a line carrying one declaration's end and
+/// the next one's start looks like: `} fn b() {`, or the second declarator of
+/// `const a = () => {\n}, b = () => {`. Subtracting only containment leaves
+/// that line on *both* cards, and every changed line is supposed to land on
+/// exactly one. The later declaration takes it, which is the tie-break
+/// [`nests_within`] already applies when a type and its member report the same
+/// range.
+fn ceded_to(outer: (usize, LineRange), other: (usize, LineRange)) -> Option<LineRange> {
+    let (outer_pos, outer_range) = outer;
+    let (other_pos, other_range) = other;
+    let shared = outer_range.intersect(&other_range)?;
+    if nests_within(other, outer) {
+        return Some(shared);
+    }
+    if nests_within(outer, other) {
+        return None;
+    }
+    (other_pos > outer_pos).then_some(shared)
 }
 
 /// Whether `inner` is declared inside `outer`, each given as its position in
@@ -653,6 +678,41 @@ mod tests {
                 "modified",
                 "-1 +1 =3/3"
             )]
+        );
+    }
+
+    /// Two declarations sharing a line — one's closing brace is the next one's
+    /// header — overlap without either containing the other. Both cards used to
+    /// claim that line, asking the reviewer for two verdicts on one change and
+    /// counting it twice in the progress panel; the later declaration takes it.
+    #[test]
+    fn a_line_shared_by_two_overlapping_symbols_lands_on_one_card() {
+        let before = "fn a() {\n    zero();\n}\n";
+        let after = "fn a() {\n    one();\n} fn b(x: u32) {\n    two();\n}\n";
+        let file = FileInput::modified("src/lib.rs", before, after);
+        assert_eq!(
+            outline(&[file]),
+            vec![
+                row("src/lib.rs::a", "function", "modified", "=1/1 -2 +2 =3/5"),
+                row("src/lib.rs::b", "function", "added", "+3 +4 =3/5"),
+            ]
+        );
+    }
+
+    /// The same overlap in TypeScript, where a single `const` statement with
+    /// two arrow-function declarators produces it without any unusual
+    /// formatting.
+    #[test]
+    fn a_shared_line_between_two_declarators_lands_on_one_card() {
+        let before = "const a = () => {\n  zero();\n};\n";
+        let after = "const a = () => {\n  one();\n}, b = (x) => {\n  two();\n};\n";
+        let file = FileInput::modified("web/x.ts", before, after);
+        assert_eq!(
+            outline(&[file]),
+            vec![
+                row("web/x.ts::a", "function", "modified", "=1/1 -2 +2 =3/5"),
+                row("web/x.ts::b", "function", "added", "+3 +4 =3/5"),
+            ]
         );
     }
 

@@ -21,9 +21,19 @@ const LABEL: Record<Status, string> = {
 
 export function SymbolNode({ data }: NodeProps<SymbolFlowNode>) {
   const node = data.snapshot;
-  const { state, setStatus, addComment, highlighted } = useReview();
+  const { state, setStatus, addComment, highlighted, getDraft, setDraft } =
+    useReview();
   const review = reviewFor(state, node.id);
-  const [draft, setDraft] = useState("");
+  // Seeded from the shared store and written back on every keystroke. Local
+  // state still drives the input, so typing re-renders this card and no other;
+  // the store is what survives the unmount `onlyRenderVisibleElements` performs
+  // as soon as the card is panned out of the viewport.
+  const [draft, setLocalDraft] = useState(() => getDraft(node.id));
+
+  function editDraft(text: string) {
+    setLocalDraft(text);
+    setDraft(node.id, text);
+  }
 
   // A file-level node is a catch-all for hunks outside every symbol, so its
   // badge names that rather than repeating the change kind.
@@ -40,7 +50,7 @@ export function SymbolNode({ data }: NodeProps<SymbolFlowNode>) {
   function submitComment(event: React.FormEvent) {
     event.preventDefault();
     addComment(node.id, draft);
-    setDraft("");
+    editDraft("");
   }
 
   return (
@@ -96,7 +106,7 @@ export function SymbolNode({ data }: NodeProps<SymbolFlowNode>) {
           value={draft}
           placeholder="Add a comment"
           aria-label={`Add a comment on ${node.name}`}
-          onChange={(event) => setDraft(event.target.value)}
+          onChange={(event) => editDraft(event.target.value)}
         />
         <button type="submit">Add</button>
       </form>

@@ -60,7 +60,20 @@ pub trait LanguageAnalyzer {
     /// A span, not a plain range, because a type's range contains its methods'
     /// and the arrows a card draws have to come from the lines that card shows.
     /// Pass `Span::whole(range)` for a symbol with nothing nested inside it.
-    fn calls_in_span(&self, src: &str, span: &Span) -> Vec<String>;
+    ///
+    /// The batched form is the one to implement — see [`calls_by_span`], which
+    /// gives an analyzer the whole skeleton and asks only for the per-node
+    /// extraction. Answering one span at a time means one parse and one tree
+    /// walk per symbol, which is quadratic in a file's symbol count: a single
+    /// generated file with two thousand functions spent eighteen seconds here
+    /// before the server so much as bound its port.
+    fn calls_in_spans(&self, src: &str, spans: &[&Span]) -> Vec<Vec<String>>;
+
+    /// The single-span form of [`Self::calls_in_spans`], for callers that only
+    /// have one symbol to ask about.
+    fn calls_in_span(&self, src: &str, span: &Span) -> Vec<String> {
+        self.calls_in_spans(src, &[span]).pop().unwrap_or_default()
+    }
 }
 
 /// The analyzer registry, keyed by file extension (with or without a dot).
@@ -192,6 +205,55 @@ pub(crate) fn for_each_descendant(node: Node, visit: &mut dyn FnMut(Node)) {
         // and keep the parents-before-children, left-to-right visit order.
         stack[before..].reverse();
     }
+}
+
+/// The shared body of [`LanguageAnalyzer::calls_in_spans`]: parse `src` once,
+/// walk it once, and route every node to the span that claims its first line.
+///
+/// `extract` is all a language contributes — given a syntax node, it appends
+/// the bare callee names that node invokes to `out`, exactly as the per-span
+/// walk used to. Returns one list per entry of `spans`, in the same order; an
+/// unparsable source yields empty lists rather than an error, because a missing
+/// edge degrades better than a failed analysis.
+pub(crate) fn calls_by_span(
+    language: &Language,
+    label: &str,
+    src: &str,
+    spans: &[&Span],
+    extract: impl Fn(Node, &str, &mut Vec<String>),
+) -> Vec<Vec<String>> {
+    let mut out = vec![Vec::new(); spans.len()];
+    let Ok(tree) = parse(language, src, label) else {
+        return out;
+    };
+    let owner = span_owners(spans);
+    for_each_descendant(tree.root_node(), &mut |node| {
+        if let Some(Some(i)) = owner.get(start_line(node) as usize).copied() {
+            extract(node, src, &mut out[i]);
+        }
+    });
+    out
+}
+
+/// Which span claims each line, as an index into `spans`, so that the walk in
+/// [`calls_by_span`] can find a line's owner without rescanning every span.
+///
+/// A line has at most one owner: `nodes::carve` builds these spans so that
+/// wherever two symbols cover the same line, exactly one of them keeps it.
+/// Building the map costs the total length of the spans rather than the length
+/// of the file — nothing outside a span can be claimed.
+fn span_owners(spans: &[&Span]) -> Vec<Option<usize>> {
+    let end = spans.iter().map(|span| span.outer().end).max().unwrap_or(0);
+    let mut owner = vec![None; end as usize];
+    for (i, span) in spans.iter().enumerate() {
+        let range = span.outer();
+        for line in range.start..range.end {
+            if span.claims(line) {
+                owner[line as usize] = Some(i);
+            }
+        }
+    }
+    owner
 }
 
 /// Append `name` unless it is empty or already present.

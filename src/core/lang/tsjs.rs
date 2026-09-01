@@ -67,28 +67,29 @@ impl LanguageAnalyzer for TsJsAnalyzer {
         Ok(out)
     }
 
-    fn calls_in_span(&self, src: &str, span: &Span) -> Vec<String> {
-        let Ok(tree) = lang::parse(&self.dialect.language(), src, self.dialect.label()) else {
-            return Vec::new();
-        };
-        let mut out = Vec::new();
-        lang::for_each_descendant(tree.root_node(), &mut |node| {
-            if !span.claims(lang::start_line(node)) {
-                return;
-            }
-            let callee = match node.kind() {
-                // `foo()`, `obj.foo()`, `foo?.()`.
-                "call_expression" => node.child_by_field_name("function"),
-                // `new Counter(0)` counts as a use of `Counter`, which is how a
-                // class ends up connected to the code that instantiates it.
-                "new_expression" => node.child_by_field_name("constructor"),
-                _ => None,
-            };
-            if let Some(name) = callee.and_then(|callee| callee_name(callee, src)) {
-                lang::push_unique(&mut out, name);
-            }
-        });
-        out
+    fn calls_in_spans(&self, src: &str, spans: &[&Span]) -> Vec<Vec<String>> {
+        lang::calls_by_span(
+            &self.dialect.language(),
+            self.dialect.label(),
+            src,
+            spans,
+            push_calls,
+        )
+    }
+}
+
+/// Append the callee names one node invokes.
+fn push_calls(node: Node, src: &str, out: &mut Vec<String>) {
+    let callee = match node.kind() {
+        // `foo()`, `obj.foo()`, `foo?.()`.
+        "call_expression" => node.child_by_field_name("function"),
+        // `new Counter(0)` counts as a use of `Counter`, which is how a class
+        // ends up connected to the code that instantiates it.
+        "new_expression" => node.child_by_field_name("constructor"),
+        _ => None,
+    };
+    if let Some(name) = callee.and_then(|callee| callee_name(callee, src)) {
+        lang::push_unique(out, name);
     }
 }
 

@@ -45,6 +45,15 @@ const COMMENTS_GAP = 8;
  *
  * `MAX_COMMENTS_HEIGHT` is a hard ceiling — the list scrolls past it — so this
  * much headroom makes the overlap impossible rather than merely unlikely.
+ *
+ * It is reserved by padding the height each card is *declared* with, not by
+ * inflating elk's spacing options: `elk.spacing.nodeNode` is a minimum
+ * elk-layered applies within a layer and not a floor on every pair of boxes
+ * that end up vertically adjacent. Measured on this repository's own diff, 620
+ * cards laid out with the spacing at 196 left 64 pairs closer than that, the
+ * tightest 21px apart — and raising the option to 500 left the same 21px gap.
+ * Padding the boxes leaves none: elk cannot overlap a card with room it thinks
+ * is part of the card.
  */
 const COMMENT_HEADROOM = MAX_COMMENTS_HEIGHT + COMMENTS_GAP;
 
@@ -98,14 +107,14 @@ const LAYOUT_OPTIONS: Record<string, string> = {
   "elk.algorithm": "layered",
   "elk.direction": "RIGHT",
   "elk.layered.spacing.nodeNodeBetweenLayers": "120",
-  // The two gaps a card that grows can eat into, both carrying
-  // `COMMENT_HEADROOM` on top of the 60px that is there to be looked at.
+  // The visible gap between cards. Room for comments added later is not here —
+  // it rides along inside each card's declared height, see `COMMENT_HEADROOM`.
   // `nodeNode` separates cards inside one connected component; anything the
   // edge resolver found no caller for is a component of its own, and those are
   // packed by `componentComponent` — most of a real graph, and 20px apart if
   // left at its default.
-  "elk.spacing.nodeNode": `${60 + COMMENT_HEADROOM}`,
-  "elk.spacing.componentComponent": `${60 + COMMENT_HEADROOM}`,
+  "elk.spacing.nodeNode": "60",
+  "elk.spacing.componentComponent": "60",
   "elk.layered.nodePlacement.strategy": "BRANDES_KOEPF",
 };
 
@@ -207,7 +216,10 @@ export async function layout(
     children: nodes.map((node) => ({
       id: node.id,
       width: NODE_WIDTH,
-      height: nodeHeight(node, state),
+      // Taller than the card renders, by `COMMENT_HEADROOM`: the difference is
+      // the room a card needs to grow into when a comment is added to it, and
+      // the only way to make elk actually keep it is to call it part of the box.
+      height: nodeHeight(node, state) + COMMENT_HEADROOM,
     })),
     edges: edges.map((edge) => ({
       id: edge.id,

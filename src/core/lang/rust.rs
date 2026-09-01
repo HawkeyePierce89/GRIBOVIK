@@ -28,41 +28,36 @@ impl LanguageAnalyzer for RustAnalyzer {
         Ok(out)
     }
 
-    fn calls_in_span(&self, src: &str, span: &Span) -> Vec<String> {
-        let Ok(tree) = lang::parse(&language(), src, "rust") else {
-            return Vec::new();
-        };
-        let mut out = Vec::new();
-        lang::for_each_descendant(tree.root_node(), &mut |node| {
-            if !span.claims(lang::start_line(node)) {
-                return;
-            }
-            match node.kind() {
-                // `foo()`, `Type::assoc()`, `value.method()`.
-                "call_expression" => {
-                    if let Some(callee) = node.child_by_field_name("function") {
-                        if let Some(name) = callee_name(callee, src) {
-                            lang::push_unique(&mut out, name);
-                        }
-                    }
+    fn calls_in_spans(&self, src: &str, spans: &[&Span]) -> Vec<Vec<String>> {
+        lang::calls_by_span(&language(), "rust", src, spans, push_calls)
+    }
+}
+
+/// Append the callee names one node invokes.
+fn push_calls(node: Node, src: &str, out: &mut Vec<String>) {
+    match node.kind() {
+        // `foo()`, `Type::assoc()`, `value.method()`.
+        "call_expression" => {
+            if let Some(callee) = node.child_by_field_name("function") {
+                if let Some(name) = callee_name(callee, src) {
+                    lang::push_unique(out, name);
                 }
-                // `Type { .. }` counts as a use of `Type`, which is how a
-                // constructor-free struct ends up connected to its users.
-                "struct_expression" => {
-                    if let Some(name) = node.child_by_field_name("name") {
-                        lang::push_unique(&mut out, &base_type_name(name, src));
-                    }
-                }
-                // Macro arguments are an opaque `token_tree`, not expressions,
-                // so `println!("{}", extra())` holds no `call_expression` at
-                // all. Rust code calls through `format!`, `assert_eq!`, `vec!`
-                // and friends constantly; skipping them leaves a large share of
-                // real call sites out of the graph.
-                "token_tree" => push_token_tree_calls(node, src, &mut out),
-                _ => {}
             }
-        });
-        out
+        }
+        // `Type { .. }` counts as a use of `Type`, which is how a
+        // constructor-free struct ends up connected to its users.
+        "struct_expression" => {
+            if let Some(name) = node.child_by_field_name("name") {
+                lang::push_unique(out, &base_type_name(name, src));
+            }
+        }
+        // Macro arguments are an opaque `token_tree`, not expressions, so
+        // `println!("{}", extra())` holds no `call_expression` at all. Rust
+        // code calls through `format!`, `assert_eq!`, `vec!` and friends
+        // constantly; skipping them leaves a large share of real call sites
+        // out of the graph.
+        "token_tree" => push_token_tree_calls(node, src, out),
+        _ => {}
     }
 }
 

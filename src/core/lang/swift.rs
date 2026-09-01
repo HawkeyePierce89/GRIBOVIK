@@ -29,25 +29,23 @@ impl LanguageAnalyzer for SwiftAnalyzer {
         Ok(out)
     }
 
-    fn calls_in_span(&self, src: &str, span: &Span) -> Vec<String> {
-        let Ok(tree) = lang::parse(&language(), src, "swift") else {
-            return Vec::new();
-        };
-        let mut out = Vec::new();
-        lang::for_each_descendant(tree.root_node(), &mut |node| {
-            if node.kind() != "call_expression" || !span.claims(lang::start_line(node)) {
-                return;
-            }
-            // The callee is the first named child; `call_suffix` (arguments and
-            // any trailing closure) follows it. Neither carries a field name.
-            if let Some(name) = node
-                .named_child(0)
-                .and_then(|callee| callee_name(callee, src))
-            {
-                lang::push_unique(&mut out, name);
-            }
-        });
-        out
+    fn calls_in_spans(&self, src: &str, spans: &[&Span]) -> Vec<Vec<String>> {
+        lang::calls_by_span(&language(), "swift", src, spans, push_calls)
+    }
+}
+
+/// Append the callee names one node invokes.
+fn push_calls(node: Node, src: &str, out: &mut Vec<String>) {
+    if node.kind() != "call_expression" {
+        return;
+    }
+    // The callee is the first named child; `call_suffix` (arguments and any
+    // trailing closure) follows it. Neither carries a field name.
+    if let Some(name) = node
+        .named_child(0)
+        .and_then(|callee| callee_name(callee, src))
+    {
+        lang::push_unique(out, name);
     }
 }
 

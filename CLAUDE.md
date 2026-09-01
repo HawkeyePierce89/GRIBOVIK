@@ -107,7 +107,10 @@ a second verdict on the same change. `diff::Span` is the carved span:
 the later position in the analyzer's source-order list as the inner one when a
 one-line declaration gives a type and its member the same range.
 `edges.rs` carves the same way, so the call sites a card draws arrows from are
-the call sites its diff shows.
+the call sites its diff shows. Carving subtracts more than containment: two
+declarations that merely overlap — the line holding one's closing brace and the
+next one's header, `} fn b() {` — would otherwise both claim it, so the later
+declaration takes the lines they share.
 Whatever no symbol claims goes to the file card, decided **line by
 line, not hunk by hunk** — a single hunk routinely straddles a symbol boundary,
 and counting it as reviewed because the symbol claimed part of it is how
@@ -168,14 +171,23 @@ hand: in a linked worktree or a submodule that path is a file, not a directory.
      within a file (`Type::method` in Rust, `Type.method` elsewhere) and
      `kind` must never be `"file"` — that string is reserved for the synthetic
      file-level node (`nodes::FILE_KIND`).
-   - `calls_in_span(&self, src, span) -> Vec<String>` — bare callee names
-     from the lines `span` claims, first-occurrence order, deduplicated. A
-     `diff::Span`, not a plain range, because a type's range contains its
-     methods' and a card's arrows must come from the lines that card shows;
-     `Span::whole(range)` covers a symbol with nothing nested. Return an
-     empty list on an unparsable source rather than erroring: a missing edge
-     degrades better than a failed analysis. Bare names are all the edge
-     resolver has, so strip receivers and paths down to the final segment.
+   - `calls_in_spans(&self, src, spans) -> Vec<Vec<String>>` — bare callee
+     names from the lines each span claims, first-occurrence order,
+     deduplicated, one list per span. A `diff::Span`, not a plain range,
+     because a type's range contains its methods' and a card's arrows must
+     come from the lines that card shows; `Span::whole(range)` covers a symbol
+     with nothing nested. Return empty lists on an unparsable source rather
+     than erroring: a missing edge degrades better than a failed analysis.
+     Bare names are all the edge resolver has, so strip receivers and paths
+     down to the final segment.
+
+     Implement it through `lang::calls_by_span`, which owns the parse, the
+     walk and the routing of each node to the span claiming its line, and asks
+     the language only for a `fn(Node, &str, &mut Vec<String>)` that appends
+     what one node calls. Answering one span at a time is a parse and a full
+     tree walk per symbol — quadratic in a file's symbol count, and eighteen
+     seconds of silence before the server binds on a generated file with two
+     thousand functions. `calls_in_span` remains as a single-span convenience.
 3. Register the extensions in `analyzer_for_extension` in
    `src/core/lang/mod.rs`. That match is the only registry —
    `supports_extension` and the pipeline's file filter both read from it, so

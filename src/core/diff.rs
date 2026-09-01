@@ -32,6 +32,13 @@ impl LineRange {
     pub fn contains(&self, line: u32) -> bool {
         self.start <= line && line < self.end
     }
+
+    /// The lines both ranges cover, or `None` when they are disjoint.
+    pub fn intersect(&self, other: &LineRange) -> Option<LineRange> {
+        let start = self.start.max(other.start);
+        let end = self.end.min(other.end);
+        (start < end).then(|| LineRange::new(start, end))
+    }
 }
 
 /// Diff `old` against `new`, emitting one [`DiffLine`] per line of the result.
@@ -101,6 +108,13 @@ impl Span {
     /// Whether this symbol is the innermost one covering `line`.
     pub fn claims(&self, line: u32) -> bool {
         self.outer.contains(line) && !self.inner.iter().any(|r| r.contains(line))
+    }
+
+    /// The uncarved range, every line of which this span either claims or has
+    /// ceded to another symbol. Nothing outside it is ever claimed, which is
+    /// what lets a caller bound a scan by it instead of by the whole file.
+    pub fn outer(&self) -> LineRange {
+        self.outer
     }
 }
 

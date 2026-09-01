@@ -25,6 +25,76 @@ function chain(): GraphSnapshot {
   };
 }
 
+/**
+ * A snapshot of `count` cards in components of assorted shapes: singletons,
+ * pairs and short chains, with diffs of differing lengths.
+ *
+ * The mix is the point. Uniform singletons are packed into tidy columns by any
+ * spacing at all; it is components of unequal height and width, laid out beside
+ * each other, that a spacing-based headroom fails to keep apart.
+ */
+function scattered(count: number): GraphSnapshot {
+  const snapshot = chain();
+  snapshot.nodes = Array.from({ length: count }, (_, i) => ({
+    id: `a::n${i}`,
+    file: "a",
+    name: `a::n${i}`,
+    kind: "function",
+    change: "modified" as const,
+    diff: Array.from({ length: (i % 9) * 3 }, () => ({
+      tag: "add" as const,
+      old_line: null,
+      new_line: 1,
+      text: "x",
+    })),
+  }));
+  snapshot.edges = [];
+  // One large many-layered component alongside singletons: the layers are
+  // where `elk.spacing.nodeNode` governs, the leftovers are packed around it,
+  // and it is the two together that a spacing-based headroom fails to keep
+  // apart.
+  for (let i = 0; i < count; i += 1) {
+    if (i % 3 === 0) continue;
+    snapshot.edges.push({
+      from: `a::n${i}`,
+      to: `a::n${(i * 7 + 5) % count}`,
+      confidence: "certain" as const,
+    });
+  }
+  return snapshot;
+}
+
+/**
+ * Every pair of cards drawn over each other, given how tall each card renders.
+ *
+ * Sorting by `y` and walking the list is not enough: elk packs unconnected
+ * components side by side, so two cards can be vertically adjacent in that
+ * order and hundreds of pixels apart horizontally. Only cards whose x ranges
+ * overlap can collide, and those are the pairs to check.
+ */
+function overlapping(
+  placed: ReturnType<typeof toFlow>["nodes"],
+  heightOf: (node: (typeof placed)[number]) => number,
+): string[] {
+  const out: string[] = [];
+  for (let i = 0; i < placed.length; i += 1) {
+    for (let j = i + 1; j < placed.length; j += 1) {
+      const a = placed[i]!;
+      const b = placed[j]!;
+      const apart =
+        a.position.x + NODE_WIDTH <= b.position.x ||
+        b.position.x + NODE_WIDTH <= a.position.x;
+      if (apart) continue;
+      const [top, bottom] =
+        a.position.y < b.position.y ? [a, b] : [b, a];
+      if (bottom.position.y < top.position.y + heightOf(top)) {
+        out.push(`${top.id} over ${bottom.id}`);
+      }
+    }
+  }
+  return out;
+}
+
 describe("layout", () => {
   it("puts a callee to the right of its caller", async () => {
     const { nodes, edges } = toFlow(chain());
@@ -71,27 +141,16 @@ describe("layout", () => {
   });
 
   it("stacks cards without overlapping, whatever their diffs", async () => {
-    const snapshot = chain();
-    snapshot.edges = [];
-    snapshot.nodes[0]!.diff = Array.from({ length: 40 }, () => ({
-      tag: "add" as const,
-      old_line: null,
-      new_line: 1,
-      text: "x",
-    }));
-    const { nodes, edges } = toFlow(snapshot);
+    // Enough cards that elk has to pack them into columns: two of them are
+    // placed clear of each other by any spacing at all, which is what let a
+    // broken headroom pass unnoticed.
+    const { nodes, edges } = toFlow(scattered(300));
 
     const placed = await layout(nodes, edges);
 
-    // Unconnected cards share a column, so each one's box has to clear the box
-    // above it. A fixed height for every card is exactly what breaks this.
-    const column = [...placed].sort((a, b) => a.position.y - b.position.y);
-    for (let i = 1; i < column.length; i += 1) {
-      const above = column[i - 1]!;
-      expect(column[i]!.position.y).toBeGreaterThanOrEqual(
-        above.position.y + nodeHeight(above),
-      );
-    }
+    // Each card's box has to clear the box above it. A fixed height for every
+    // card is exactly what breaks this.
+    expect(overlapping(placed, (node) => nodeHeight(node))).toEqual([]);
   });
 
   it("grows a card's height with the comments already saved on it", async () => {
@@ -115,19 +174,13 @@ describe("layout", () => {
     // Reopening a review must not stack a commented card into its neighbour:
     // laying out with an empty state is exactly what does that.
     const placed = await layout(nodes, edges, commented);
-    const column = [...placed].sort((a, b) => a.position.y - b.position.y);
-    for (let i = 1; i < column.length; i += 1) {
-      const above = column[i - 1]!;
-      expect(column[i]!.position.y).toBeGreaterThanOrEqual(
-        above.position.y + nodeHeight(above, commented),
-      );
-    }
+    expect(overlapping(placed, (node) => nodeHeight(node, commented))).toEqual(
+      [],
+    );
   });
 
   it("leaves room below a card for comments added after layout", async () => {
-    const snapshot = chain();
-    snapshot.edges = [];
-    const { nodes, edges } = toFlow(snapshot);
+    const { nodes, edges } = toFlow(scattered(300));
 
     // Laid out with no comments at all — the first-run case.
     const placed = await layout(nodes, edges);
@@ -147,13 +200,7 @@ describe("layout", () => {
         },
       ]),
     );
-    const column = [...placed].sort((a, b) => a.position.y - b.position.y);
-    for (let i = 1; i < column.length; i += 1) {
-      const above = column[i - 1]!;
-      expect(column[i]!.position.y).toBeGreaterThanOrEqual(
-        above.position.y + nodeHeight(above, full),
-      );
-    }
+    expect(overlapping(placed, (node) => nodeHeight(node, full))).toEqual([]);
   });
 
   it("leaves the same room between cards that share a caller", async () => {
