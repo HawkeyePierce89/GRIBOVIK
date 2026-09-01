@@ -42,6 +42,10 @@ pub struct Args {
     /// Serve the frontend from this directory instead of the embedded build.
     #[arg(long, value_name = "DIR")]
     pub assets: Option<PathBuf>,
+
+    /// Export a self-contained HTML page and exit, instead of starting a server.
+    #[arg(long, value_name = "FILE", conflicts_with_all = ["port", "no_open"])]
+    pub export: Option<PathBuf>,
 }
 
 /// What the CLI does once the diff has been analyzed.
@@ -55,6 +59,12 @@ pub enum Session {
         port: u16,
         open: bool,
     },
+    /// Export the snapshot to a self-contained HTML file instead of starting a server.
+    Export {
+        snapshot: Box<crate::core::GraphSnapshot>,
+        assets: Assets,
+        path: PathBuf,
+    },
 }
 
 /// Analyze the range named by `args` and decide what to do about it.
@@ -67,11 +77,17 @@ pub fn prepare(repo: &Repo, args: &Args) -> Result<Session> {
     // request with a 404 blaming the *embedded* build for a problem in the
     // directory the reviewer named.
     if let Some(dir) = args.assets.as_deref() {
-        let index = dir.join("index.html");
-        if !index.is_file() {
+        let expected = if args.export.is_some() {
+            "export.html"
+        } else {
+            "index.html"
+        };
+        let file = dir.join(expected);
+        if !file.is_file() {
             anyhow::bail!(
-                "--assets {}: no index.html there; run `just build-web` first",
-                dir.display()
+                "--assets {}: no {} there; run `just build-web` first",
+                dir.display(),
+                expected
             );
         }
     }
@@ -98,6 +114,14 @@ pub fn prepare(repo: &Repo, args: &Args) -> Result<Session> {
     };
 
     let assets = Assets::new(args.assets.clone());
+
+    if let Some(path) = &args.export {
+        return Ok(Session::Export {
+            snapshot: Box::new(snapshot),
+            assets,
+            path: path.clone(),
+        });
+    }
 
     Ok(Session::Serve {
         state: Arc::new(AppState::new(snapshot, assets)),
@@ -173,6 +197,24 @@ mod tests {
         assert!(Args::try_parse_from(["gribovik", "--port", "http"]).is_err());
     }
 
+    #[test]
+    fn export_flag_parses() {
+        let args = parse(&["--export", "out.html"]);
+        assert_eq!(args.export, Some(PathBuf::from("out.html")));
+    }
+
+    #[test]
+    fn export_conflicts_with_port() {
+        assert!(
+            Args::try_parse_from(["gribovik", "--export", "out.html", "--port", "8080"]).is_err()
+        );
+    }
+
+    #[test]
+    fn export_conflicts_with_no_open() {
+        assert!(Args::try_parse_from(["gribovik", "--export", "out.html", "--no-open"]).is_err());
+    }
+
     /// Run git in `dir`, asserting success.
     fn git(dir: &Path, args: &[&str]) {
         let out = Command::new("git")
@@ -216,7 +258,18 @@ mod tests {
                     "unexpected message: {message}"
                 );
             }
-            Session::Serve { .. } => panic!("an unchanged range should not start a server"),
+            _ => panic!("an unchanged range should not start a server"),
+        }
+    }
+
+    #[test]
+    fn an_empty_diff_with_export_still_yields_no_changes() {
+        let (_dir, repo) = repo_without_changes();
+        let args = parse(&["master", "HEAD", "--export", "out.html"]);
+
+        match prepare(&repo, &args).unwrap() {
+            Session::NoChanges(_) => {}
+            _ => panic!("expected NoChanges"),
         }
     }
 
@@ -233,6 +286,19 @@ mod tests {
     }
 
     #[test]
+    fn an_assets_directory_without_export_html_is_rejected_when_exporting() {
+        let (_dir, repo) = repo_without_changes();
+        let empty = TempDir::new().unwrap();
+        let path = empty.path().to_string_lossy().to_string();
+        // Since we are exporting, we expect export.html, not index.html
+        let args = parse(&["master", "HEAD", "--export", "out.html", "--assets", &path]);
+
+        let err = prepare(&repo, &args).unwrap_err().to_string();
+
+        assert!(err.contains("no export.html"), "unexpected error: {err}");
+    }
+
+    #[test]
     fn an_unknown_revision_is_an_error_rather_than_an_empty_graph() {
         let (_dir, repo) = repo_without_changes();
         let args = parse(&["no-such-branch"]);
@@ -240,5 +306,24 @@ mod tests {
         let err = prepare(&repo, &args).unwrap_err().to_string();
 
         assert!(err.contains("unknown revision"), "unexpected error: {err}");
+    }
+
+    #[test]
+    fn a_changed_range_with_export_yields_session_export() {
+        let (dir, repo) = repo_without_changes();
+        // create a change on a new branch
+        git(dir.path(), &["checkout", "-b", "feature"]);
+        fs::write(dir.path().join("src.rs"), "fn one() {}\nfn two() {}\n").unwrap();
+        git(dir.path(), &["add", "-A"]);
+        git(dir.path(), &["commit", "-q", "-m", "add two"]);
+
+        let args = parse(&["master", "HEAD", "--export", "out.html"]);
+
+        match prepare(&repo, &args).unwrap() {
+            Session::Export { path, .. } => {
+                assert_eq!(path, PathBuf::from("out.html"));
+            }
+            other => panic!("expected Export session, got {:?}", other),
+        }
     }
 }

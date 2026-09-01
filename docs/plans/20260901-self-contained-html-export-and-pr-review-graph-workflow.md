@@ -155,24 +155,24 @@ writes the result. Serve mode is untouched.
 **Files:**
 - Modify: `src/cli.rs`, `src/main.rs`
 
-- [ ] add `--export <FILE>` to `Args` as `Option<PathBuf>` with
+- [x] add `--export <FILE>` to `Args` as `Option<PathBuf>` with
       `conflicts_with_all = ["port", "no_open"]`
-- [ ] add `Session::Export { snapshot: Box<GraphSnapshot>, assets: Assets,
+- [x] add `Session::Export { snapshot: Box<GraphSnapshot>, assets: Assets,
       path: PathBuf }`
-- [ ] in `prepare`, validate the `--assets` directory against `export.html`
+- [x] in `prepare`, validate the `--assets` directory against `export.html`
       when exporting and `index.html` otherwise, still *before* the analysis;
       return `Session::Export` instead of `Session::Serve` when `--export` is
       set. The `NoChanges` branch is reached first and unchanged, so no file is
       written for an empty range
-- [ ] wire `Session::Export` in `main.rs`: call `export::write(...)`, print the
+- [x] wire `Session::Export` in `main.rs`: call `export::write(...)`, print the
       path on stdout, return `Ok(())`
-- [ ] tests in `src/cli.rs`: `--export` parses; `--export` with `--port`
+- [x] tests in `src/cli.rs`: `--export` parses; `--export` with `--port`
       errors; `--export` with `--no-open` errors; an empty range with
       `--export` still yields `Session::NoChanges`; `--export` with an
       `--assets` directory lacking `export.html` errors before the analysis;
       a changed range with `--export` yields `Session::Export` carrying the
       given path
-- [ ] run `cargo test`, `cargo clippy --all-targets -- -D warnings`,
+- [x] run `cargo test`, `cargo clippy --all-targets -- -D warnings`,
       `cargo fmt --check` — must pass
 
 ### Task 4: End-to-end export test
