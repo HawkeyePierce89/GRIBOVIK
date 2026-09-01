@@ -134,8 +134,8 @@ whose DNS resolves to 127.0.0.1; the graph is a diff of unpushed work.
 
 `--export <FILE>` provides a second output for the same snapshot. It reads the
 `export.html` shell built by Vite and injects the JSON snapshot in an inline
-script tag. The injection anchor is `</head>`. This produces a single, self-
-contained file that browsers will gladly open from a `file://` URI.
+script tag. The injection anchor is `</head>`. This produces a single,
+self-contained file that browsers will gladly open from a `file://` URI.
 
 ## Adding a LanguageAnalyzer
 

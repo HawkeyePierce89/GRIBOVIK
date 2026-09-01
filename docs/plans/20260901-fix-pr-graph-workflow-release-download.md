@@ -106,15 +106,15 @@ one paragraph in `CLAUDE.md`.
 **Files:**
 - Modify: `CLAUDE.md`
 
-- [ ] In "The Export Mode", rewrap the paragraph so `self-contained` is not
+- [x] In "The Export Mode", rewrap the paragraph so `self-contained` is not
       split across the line break (currently `self-` at the end of one line and
       `contained` at the start of the next, which renders as `self- contained`).
       Keep the surrounding lines within the file's existing wrap width and
       change no wording.
-- [ ] Verify no other hyphen-at-end-of-line splits were introduced by the
+- [x] Verify no other hyphen-at-end-of-line splits were introduced by the
       rewrap: `grep -n -- '-$' CLAUDE.md` should not report a line inside this
       section.
-- [ ] No code changes, so no new tests; the check above is the verification.
+- [x] No code changes, so no new tests; the check above is the verification.
 
 ### Task 4: Verify acceptance criteria
 
