@@ -98,8 +98,13 @@ twins, TypeScript overload signatures — so `nodes::symbol_cards` appends `#2`,
 the old side with the *n*-th on the new. The first occurrence keeps the plain
 id, which is why the suffix costs nothing for the files that behave.
 
-Every changed line of a file lands on some card. Symbol cards claim what falls
-in their span; whatever is left over goes to the file card, decided **line by
+Every changed line of a file lands on **exactly one** card. Symbol cards claim
+what falls in their span, and in Swift and TypeScript — where a type's span
+contains its members' — a line goes to the *innermost* symbol holding it, so a
+method-body edit is the method's alone and the enclosing class is not asked for
+a second verdict on the same change. `diff::Span` is the carved span:
+`nodes::spans` subtracts every strictly-nested sibling range from each symbol's.
+Whatever no symbol claims goes to the file card, decided **line by
 line, not hunk by hunk** — a single hunk routinely straddles a symbol boundary,
 and counting it as reviewed because the symbol claimed part of it is how
 changed imports disappear from a review. The one deliberate exception is a

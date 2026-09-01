@@ -112,9 +112,10 @@ work.
 | `--no-open` | off | Print the URL instead of opening a browser. |
 | `--assets <DIR>` | embedded | Serve the frontend from a directory on disk instead of the build baked into the binary. Useful with `web/dist` while working on the UI. |
 
-The server binds loopback only, and answers only requests addressed to
-`localhost` or `127.0.0.1` — anything else gets a 403, so a web page cannot
-reach your unpushed diff by pointing its own hostname at 127.0.0.1.
+The server binds loopback only, and answers only requests addressed to a
+loopback name — `localhost`, `127.0.0.1` or `[::1]`, with or without a port.
+Anything else gets a 403, so a web page cannot reach your unpushed diff by
+pointing its own hostname at 127.0.0.1.
 
 GRIBOVIK prints the URL it bound to and runs until `Ctrl+C`. If the range
 contains no reviewable changes it says so and exits 0 without binding a port.

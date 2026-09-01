@@ -39,8 +39,19 @@ impl LineRange {
 /// Every line of both revisions appears exactly once: context lines carry both
 /// line numbers, additions only `new_line`, deletions only `old_line`. Trailing
 /// newlines are stripped from `text`.
+///
+/// Lines are split on `\n` and nothing else. `similar`'s own line tokenizer
+/// also breaks on a bare `\r`, but tree-sitter advances a row only on `\n` —
+/// and the two numberings have to agree, because [`slice_diff`] indexes this
+/// list with spans the language layer reported. One stray `CR` in a file would
+/// otherwise shift every symbol below it by a line, quietly handing cards the
+/// wrong diff.
 pub fn line_diff(old: &str, new: &str) -> Vec<DiffLine> {
-    let diff = TextDiff::from_lines(old, new);
+    let old_lines: Vec<&str> = old.split_inclusive('\n').collect();
+    let new_lines: Vec<&str> = new.split_inclusive('\n').collect();
+    let diff = TextDiff::configure()
+        .newline_terminated(true)
+        .diff_slices(&old_lines, &new_lines);
     diff.iter_all_changes()
         .map(|change| {
             let tag = match change.tag() {
@@ -58,20 +69,55 @@ pub fn line_diff(old: &str, new: &str) -> Vec<DiffLine> {
         .collect()
 }
 
+/// One symbol's claim on a side: its span, minus the spans nested inside it.
+///
+/// Swift and TypeScript declare methods inside their type, so the type's span
+/// contains its members' — and [`crate::core::lang::Symbol::start_line`] asks
+/// callers to attribute a line to the *innermost* symbol containing it. Doing
+/// it by plain containment instead puts a one-line edit to a method on the
+/// method card *and* on the enclosing class card: the reviewer is asked for the
+/// same verdict twice and the progress panel counts the work twice.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Span {
+    outer: LineRange,
+    inner: Vec<LineRange>,
+}
+
+impl Span {
+    /// A span with `inner` carved out of `outer`.
+    pub fn new(outer: LineRange, inner: Vec<LineRange>) -> Self {
+        Self { outer, inner }
+    }
+
+    /// A span with nothing nested inside it — the common case, and the only
+    /// one in a language whose symbols never nest.
+    pub fn whole(outer: LineRange) -> Self {
+        Self {
+            outer,
+            inner: Vec::new(),
+        }
+    }
+
+    /// Whether this symbol is the innermost one covering `line`.
+    pub fn claims(&self, line: u32) -> bool {
+        self.outer.contains(line) && !self.inner.iter().any(|r| r.contains(line))
+    }
+}
+
 /// Select the diff lines belonging to a symbol's span.
 ///
-/// A line is kept when it sits inside the symbol's old span or its new span,
+/// A line is kept when the symbol claims it on the old side or on the new side,
 /// so a modified symbol picks up its deletions and its additions alike. Pass
 /// `None` for the side a symbol does not exist on (added or deleted symbols).
 pub fn slice_diff(
     diff: &[DiffLine],
-    old_range: Option<LineRange>,
-    new_range: Option<LineRange>,
+    old_span: Option<&Span>,
+    new_span: Option<&Span>,
 ) -> Vec<DiffLine> {
     diff.iter()
         .filter(|line| {
-            let in_old = matches!((old_range, line.old_line), (Some(r), Some(l)) if r.contains(l));
-            let in_new = matches!((new_range, line.new_line), (Some(r), Some(l)) if r.contains(l));
+            let in_old = matches!((old_span, line.old_line), (Some(s), Some(l)) if s.claims(l));
+            let in_new = matches!((new_span, line.new_line), (Some(s), Some(l)) if s.claims(l));
             in_old || in_new
         })
         .cloned()
@@ -79,10 +125,15 @@ pub fn slice_diff(
 }
 
 /// Drop one trailing line terminator, leaving any other whitespace alone.
+///
+/// A lone trailing `\r` counts: a file whose last line ends in a bare `CR` has
+/// no newline to strip, and the terminator would otherwise be rendered as part
+/// of the card's text.
 fn strip_eol(text: &str) -> &str {
-    text.strip_suffix('\n')
-        .map(|t| t.strip_suffix('\r').unwrap_or(t))
-        .unwrap_or(text)
+    match text.strip_suffix('\n') {
+        Some(t) => t.strip_suffix('\r').unwrap_or(t),
+        None => text.strip_suffix('\r').unwrap_or(text),
+    }
 }
 
 #[cfg(test)]
@@ -204,11 +255,8 @@ mod tests {
         let new = "fn a() {\n    one();\n}\n\nfn b() {\n    TWO();\n}\n";
         let diff = line_diff(old, new);
 
-        let b = slice_diff(
-            &diff,
-            Some(LineRange::inclusive(5, 7)),
-            Some(LineRange::inclusive(5, 7)),
-        );
+        let b_span = Span::whole(LineRange::inclusive(5, 7));
+        let b = slice_diff(&diff, Some(&b_span), Some(&b_span));
         assert_eq!(
             render(&b),
             vec![
@@ -219,11 +267,8 @@ mod tests {
             ]
         );
 
-        let a = slice_diff(
-            &diff,
-            Some(LineRange::inclusive(1, 3)),
-            Some(LineRange::inclusive(1, 3)),
-        );
+        let a_span = Span::whole(LineRange::inclusive(1, 3));
+        let a = slice_diff(&diff, Some(&a_span), Some(&a_span));
         assert!(a.iter().all(|l| l.tag == DiffTag::Context));
     }
 
@@ -236,7 +281,8 @@ mod tests {
         // A deleted symbol has no span in the new revision. The closing brace
         // is byte-identical on both sides, so the diff calls it context — it
         // still belongs to the symbol because it sits inside the old span.
-        let deleted = slice_diff(&diff, Some(LineRange::inclusive(1, 3)), None);
+        let whole = Span::whole(LineRange::inclusive(1, 3));
+        let deleted = slice_diff(&diff, Some(&whole), None);
         assert_eq!(
             render(&deleted),
             vec![
@@ -247,7 +293,7 @@ mod tests {
         );
 
         // An added one has no span in the old revision.
-        let added = slice_diff(&diff, None, Some(LineRange::inclusive(1, 3)));
+        let added = slice_diff(&diff, None, Some(&whole));
         assert_eq!(
             render(&added),
             vec![

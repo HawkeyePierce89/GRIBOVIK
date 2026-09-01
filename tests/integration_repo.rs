@@ -300,9 +300,11 @@ fn analyzes_a_multi_language_change_end_to_end() {
     assert_eq!(
         outline(&snapshot),
         vec![
-            // Swift: the class's span contains its method, so both are cards.
+            // Swift: the class's span contains its method, but every changed
+            // line goes to the innermost symbol holding it — so only the
+            // method is carded, and `Session` is not asked about a second
+            // time. A class-level edit would still give `Session` a card.
             ("app/model.swift::Legacy", "struct", ChangeKind::Deleted),
-            ("app/model.swift::Session", "class", ChangeKind::Modified),
             (
                 "app/model.swift::Session.refresh",
                 "method",
@@ -342,11 +344,6 @@ fn analyzes_a_multi_language_change_end_to_end() {
     assert_eq!(
         edges(&snapshot),
         vec![
-            (
-                "app/model.swift::Session",
-                "app/model.swift::touch",
-                Confidence::Certain
-            ),
             (
                 "app/model.swift::Session.refresh",
                 "app/model.swift::touch",

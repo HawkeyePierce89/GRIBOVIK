@@ -8,7 +8,7 @@
 
 use std::collections::{HashMap, HashSet};
 
-use crate::core::diff::{line_diff, slice_diff};
+use crate::core::diff::{line_diff, slice_diff, LineRange, Span};
 use crate::core::error::AnalysisError;
 use crate::core::lang::{analyzer_for_extension, Symbol};
 use crate::core::snapshot::{ChangeKind, DiffLine, DiffTag, Node};
@@ -152,9 +152,11 @@ fn symbol_cards(
 ) -> Vec<Node> {
     let (old_occurrences, old_nth) = occurrences(old_symbols);
     let (new_occurrences, new_nth) = occurrences(new_symbols);
+    let old_spans = spans(old_symbols);
+    let new_spans = spans(new_symbols);
 
     let mut nodes = Vec::new();
-    for (symbol, nth) in old_symbols.iter().zip(&old_nth) {
+    for ((symbol, nth), span) in old_symbols.iter().zip(&old_nth).zip(&old_spans) {
         // The same name declared as often on the new side means this
         // occurrence survived; a shrinking count deletes the trailing ones.
         if new_occurrences
@@ -163,7 +165,7 @@ fn symbol_cards(
         {
             continue;
         }
-        let diff = slice_diff(file_diff, Some(symbol.range()), None);
+        let diff = slice_diff(file_diff, Some(span), None);
         // The same guard the modified branch applies. Occurrences are paired
         // positionally, so removing the *first* of two `impl S { fn fmt }`
         // blocks marks the surviving one deleted: its span holds no changed
@@ -174,16 +176,16 @@ fn symbol_cards(
             nodes.push(symbol_node(file, symbol, ChangeKind::Deleted, *nth, diff));
         }
     }
-    for (symbol, nth) in new_symbols.iter().zip(&new_nth) {
-        match old_occurrences.get(symbol.qualified_name.as_str(), *nth) {
+    for ((symbol, nth), span) in new_symbols.iter().zip(&new_nth).zip(&new_spans) {
+        match old_occurrences.index_of(symbol.qualified_name.as_str(), *nth) {
             Some(before) => {
-                let diff = slice_diff(file_diff, Some(before.range()), Some(symbol.range()));
+                let diff = slice_diff(file_diff, Some(&old_spans[before]), Some(span));
                 if diff.iter().any(is_change) {
                     nodes.push(symbol_node(file, symbol, ChangeKind::Modified, *nth, diff));
                 }
             }
             None => {
-                let diff = slice_diff(file_diff, None, Some(symbol.range()));
+                let diff = slice_diff(file_diff, None, Some(span));
                 // And the same guard again. A symbol whose qualifier changed
                 // but whose body did not — renaming the `impl` block, the
                 // class, the `extension` target — is absent from the old side
@@ -201,12 +203,14 @@ fn symbol_cards(
 }
 
 /// One side's symbols indexed by qualified name, keeping every declaration in
-/// source order rather than letting the first one win.
-struct Occurrences<'a>(HashMap<&'a str, Vec<&'a Symbol>>);
+/// source order rather than letting the first one win. The values are positions
+/// in the side's symbol list, so a lookup also addresses that symbol's [`Span`].
+struct Occurrences<'a>(HashMap<&'a str, Vec<usize>>);
 
-impl<'a> Occurrences<'a> {
-    /// The `nth` declaration of `name`, if the side has that many.
-    fn get(&self, name: &str, nth: usize) -> Option<&'a Symbol> {
+impl Occurrences<'_> {
+    /// Where the `nth` declaration of `name` sits in the side's symbol list, if
+    /// the side has that many.
+    fn index_of(&self, name: &str, nth: usize) -> Option<usize> {
         self.0.get(name).and_then(|all| all.get(nth)).copied()
     }
 
@@ -219,14 +223,45 @@ impl<'a> Occurrences<'a> {
 /// Index `symbols` by name and tell each one which occurrence of its name it
 /// is, so the two results can be zipped with the input.
 fn occurrences(symbols: &[Symbol]) -> (Occurrences<'_>, Vec<usize>) {
-    let mut index: HashMap<&str, Vec<&Symbol>> = HashMap::new();
+    let mut index: HashMap<&str, Vec<usize>> = HashMap::new();
     let mut nth = Vec::with_capacity(symbols.len());
-    for symbol in symbols {
+    for (position, symbol) in symbols.iter().enumerate() {
         let all = index.entry(symbol.qualified_name.as_str()).or_default();
         nth.push(all.len());
-        all.push(symbol);
+        all.push(position);
     }
     (Occurrences(index), nth)
+}
+
+/// What each symbol of one side actually claims: its own span with the spans of
+/// the symbols declared inside it carved out.
+///
+/// Quadratic in the symbol count of a single file, which is a few dozen at
+/// worst and pure integer comparison — next to the parse that produced the
+/// symbols it does not register.
+fn spans(symbols: &[Symbol]) -> Vec<Span> {
+    symbols
+        .iter()
+        .map(|symbol| {
+            let outer = symbol.range();
+            let inner: Vec<LineRange> = symbols
+                .iter()
+                .map(Symbol::range)
+                .filter(|other| nests_within(*other, outer))
+                .collect();
+            Span::new(outer, inner)
+        })
+        .collect()
+}
+
+/// Whether `inner` is a *strict* subrange of `outer`.
+///
+/// Strict matters: two symbols reported with identical spans are not nested,
+/// and treating them as such would leave both cards empty.
+fn nests_within(inner: LineRange, outer: LineRange) -> bool {
+    inner.start >= outer.start
+        && inner.end <= outer.end
+        && (inner.start > outer.start || inner.end < outer.end)
 }
 
 /// Parse both sides with the analyzer the extension selects.
@@ -522,6 +557,79 @@ mod tests {
         );
     }
 
+    /// The whole point of carving nested spans out: a method body edit is the
+    /// method's alone. Without it the enclosing type card repeats every one of
+    /// those lines, and the reviewer votes twice on the same change.
+    #[test]
+    fn an_edit_inside_a_method_does_not_card_its_enclosing_type() {
+        let before = "class Service {\n  a() { return 1; }\n  get() { return 2; }\n}\n";
+        let after = "class Service {\n  a() { return 1; }\n  get() { return 22; }\n}\n";
+        let file = FileInput::modified("web/svc.ts", before, after);
+        assert_eq!(
+            outline(&[file]),
+            vec![row(
+                "web/svc.ts::Service.get",
+                "method",
+                "modified",
+                "-3 +3"
+            )]
+        );
+    }
+
+    /// Same rule through the Swift analyzer, whose type spans nest for the same
+    /// reason TypeScript's do.
+    #[test]
+    fn a_swift_struct_does_not_repeat_its_methods_changes() {
+        let before =
+            "struct S {\n  func a() -> Int { return 1 }\n  func get() -> Int { return 2 }\n}\n";
+        let after =
+            "struct S {\n  func a() -> Int { return 1 }\n  func get() -> Int { return 22 }\n}\n";
+        let file = FileInput::modified("App/S.swift", before, after);
+        assert_eq!(
+            outline(&[file]),
+            vec![row("App/S.swift::S.get", "method", "modified", "-3 +3")]
+        );
+    }
+
+    /// A class-level edit still gets the type its own card: the carve-out
+    /// removes the members' lines, not the declaration's.
+    #[test]
+    fn a_type_level_edit_still_cards_the_type() {
+        let before = "class Service {\n  a() { return 1; }\n}\n";
+        let after = "class Service extends Base {\n  a() { return 1; }\n}\n";
+        let file = FileInput::modified("web/svc.ts", before, after);
+        assert_eq!(
+            outline(&[file]),
+            vec![row(
+                "web/svc.ts::Service",
+                "class",
+                "modified",
+                "-1 +1 =3/3"
+            )]
+        );
+    }
+
+    /// A bare `CR` is a line break to `similar` but not to tree-sitter. If the
+    /// diff adopted `similar`'s count, every symbol below the `CR` would be
+    /// sliced one line short — here `b` would end at the changed line and lose
+    /// its closing brace. `b` legitimately starts at 4: the comment above it is
+    /// leading documentation, which spans always cover.
+    #[test]
+    fn a_bare_carriage_return_does_not_shift_symbol_spans() {
+        let before = "fn a() -> u32 {\n    1\n}\n// no\rte\nfn b() -> u32 {\n    2\n}\n";
+        let after = "fn a() -> u32 {\n    1\n}\n// no\rte\nfn b() -> u32 {\n    999\n}\n";
+        let file = FileInput::modified("src/lib.rs", before, after);
+        assert_eq!(
+            outline(&[file]),
+            vec![row(
+                "src/lib.rs::b",
+                "function",
+                "modified",
+                "=4/4 =5/5 -6 +6 =7/7"
+            )]
+        );
+    }
+
     #[test]
     fn swift_deleted_type_and_extension_method_are_separate_cards() {
         let file = FileInput::modified(
@@ -552,11 +660,15 @@ mod tests {
         );
     }
 
-    /// Languages that nest methods inside their type produce both cards: the
-    /// member's card is the focused one, the type's card shows the change in
-    /// the context of the whole declaration.
+    /// Languages that nest methods inside their type produce a card per member
+    /// plus, when there is class-level scaffolding to review, one for the type.
+    /// The type does *not* repeat its members' changes: every line goes to the
+    /// innermost symbol containing it, so `Counter` keeps the blank separator
+    /// and the closing brace while `bump`'s edit belongs to `bump` alone. The
+    /// constructor's lines are absent for the same reason — they are the
+    /// constructor's, and it has nothing to review.
     #[test]
-    fn a_typescript_class_and_its_methods_are_both_cards() {
+    fn a_typescript_class_does_not_repeat_its_methods_changes() {
         let file = FileInput::modified("web/counter.ts", TS_MODIFIED_BEFORE, TS_MODIFIED_AFTER);
         assert_eq!(
             outline(&[file]),
@@ -565,7 +677,7 @@ mod tests {
                     "web/counter.ts::Counter",
                     "class",
                     "modified",
-                    "=1/1 =2/2 =3/3 =4/4 =5/5 =6/6 =7/7 =8/8 -9 +9 +10 =10/11 +12 +13 +14 =11/18"
+                    "=1/1 =2/2 =3/3 =7/7 +12 +14 =11/18"
                 ),
                 row(
                     "web/counter.ts::Counter.bump",

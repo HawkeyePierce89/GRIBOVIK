@@ -181,7 +181,7 @@ mod tests {
 
         assert_eq!(analysis.range(), ("aaa", "feature"));
         assert_eq!(analysis.snapshot().unwrap().nodes.len(), 1);
-        assert_eq!(analysis.snapshot().unwrap().nodes.len(), 1);
+        assert_eq!(analysis.snapshot().unwrap().nodes[0].id, "src/a.rs::alpha");
     }
 
     #[test]
@@ -192,7 +192,6 @@ mod tests {
             warnings: Vec::new(),
         };
         assert_eq!(analysis.range(), ("aaa", "feature"));
-        assert!(analysis.snapshot().is_none());
         assert!(analysis.snapshot().is_none());
     }
 }
