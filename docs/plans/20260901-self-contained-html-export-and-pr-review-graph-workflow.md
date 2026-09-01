@@ -180,18 +180,18 @@ writes the result. Serve mode is untouched.
 **Files:**
 - Create: `tests/export_html.rs`
 
-- [ ] build a temp repo with a changed `.rs` file (following the pattern in
+- [x] build a temp repo with a changed `.rs` file (following the pattern in
       `tests/integration_repo.rs`), run `cli::prepare` with `--export` into a
       `TempDir`, and execute the export
-- [ ] assert: exactly one file exists in the output directory; the HTML
+- [x] assert: exactly one file exists in the output directory; the HTML
       contains `__GRIBOVIK_SNAPSHOT__`, an inline `<script`, an inline
       `<style`, and the changed symbol's name; it contains no `/assets/` and
       no `/api/`
-- [ ] assert a range with no reviewable changes writes no file at all
-- [ ] confirm the existing server tests (`/api/graph`, the SPA shell, the
+- [x] assert a range with no reviewable changes writes no file at all
+- [x] confirm the existing server tests (`/api/graph`, the SPA shell, the
       `/assets/` asset served with its own content type) are untouched and
       still green
-- [ ] run `cargo test` — must pass
+- [x] run `cargo test` — must pass
 
 ### Task 5: The PR workflow
 
