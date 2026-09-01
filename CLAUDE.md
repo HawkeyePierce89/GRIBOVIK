@@ -9,12 +9,13 @@ turns a git range into an interactive graph of changed symbols; see
 ## Layout
 
 ```
-build.rs                 # refuses to compile without web/dist/index.html
+build.rs                 # refuses to compile without web/dist/{index,export}.html
 justfile                 # build-web / build / test
 src/
   main.rs                # binary entry point; the anyhow boundary
   lib.rs                 # module tree
   cli.rs                 # clap Args + prepare() -> Session
+  export.rs              # HTML injection for the --export mode
   git.rs                 # shell-out git wrapper (Repo, ChangedFile, blobs)
   pipeline.rs            # (repo, base, head) -> Analysis; git + core meet here
   server/mod.rs          # axum router, AppState, graceful shutdown
@@ -30,16 +31,20 @@ src/
     lang/{rust,swift,tsjs}.rs
 tests/
   fixtures/{rust,swift,ts}/<case>/{before,after}.<ext>
+  export_html.rs         # end-to-end temp repo -> single file export
   git_cli.rs             # temp repos through the git wrapper
   grammars_link.rs       # all three tree-sitter grammars load
   integration_repo.rs    # temp repo -> full snapshot
-web/src/
-  main.tsx               # React entry point (StrictMode)
-  App.tsx                # fetches the graph, lays out once, renders the canvas
-  styles.css
-  types/snapshot.ts      # the other half of the wire contract
-  lib/{transform,layout}.ts + *.test.ts
-  components/{SymbolNode,DiffView,ProgressPanel}.tsx
+web/
+  export.html            # single-file shell for the --export mode
+  vite.config.export.ts  # inline-everything build config
+  src/
+    main.tsx               # React entry point (StrictMode)
+    App.tsx                # fetches the graph, lays out once, renders the canvas
+    styles.css
+    types/snapshot.ts      # the other half of the wire contract
+    lib/{transform,layout,elk,snapshot}.ts + *.test.ts
+    components/{SymbolNode,DiffView,ProgressPanel}.tsx
 ```
 
 Unit tests live in `#[cfg(test)] mod tests` next to the code they cover;
@@ -125,6 +130,13 @@ Every request must address the server by a loopback name — a middleware reject
 any other `Host` with 403. Binding loopback stops the network, but not a page
 whose DNS resolves to 127.0.0.1; the graph is a diff of unpushed work.
 
+## The Export Mode
+
+`--export <FILE>` provides a second output for the same snapshot. It reads the
+`export.html` shell built by Vite and injects the JSON snapshot in an inline
+script tag. The injection anchor is `</head>`. This produces a single, self-
+contained file that browsers will gladly open from a `file://` URI.
+
 ## Adding a LanguageAnalyzer
 
 1. Add the grammar crate to `Cargo.toml` and a case to `tests/grammars_link.rs`
@@ -173,8 +185,8 @@ whose DNS resolves to 127.0.0.1; the graph is a diff of unpushed work.
 
 `cargo run -- --assets web/dist` serves the SPA from disk instead of the copy
 baked into the binary, so a `vite build` is picked up without recompiling Rust.
-`build.rs` still needs `web/dist/index.html` to exist for the crate to compile
-at all.
+`build.rs` still needs `web/dist/index.html` and `web/dist/export.html` to exist
+for the crate to compile at all.
 
 For `npm run dev` instead, the server has to be on the port
 `web/vite.config.ts` proxies `/api` to — `--port` defaults to 0, which is an
@@ -186,9 +198,9 @@ cargo run -- --port 7777 --assets web/dist   # then npm run dev in web/
 
 ## Checks before calling anything done
 
-`build.rs` fails the compile without `web/dist/index.html`, and `web/dist` is
-gitignored — so on a fresh clone `just build-web` has to run once before any
-cargo command works at all.
+`build.rs` fails the compile without `web/dist/index.html` and
+`web/dist/export.html`, and `web/dist` is gitignored — so on a fresh clone
+`just build-web` has to run once before any cargo command works at all.
 
 ```sh
 cargo test

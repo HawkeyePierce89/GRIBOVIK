@@ -38,6 +38,15 @@ async fn run() -> Result<()> {
             println!("{message}");
             return Ok(());
         }
+        Session::Export {
+            snapshot,
+            assets,
+            path,
+        } => {
+            gribovik::export::write(&assets, &snapshot, &path)?;
+            println!("exported to {}", path.display());
+            return Ok(());
+        }
         Session::Serve { state, port, open } => (state, port, open),
     };
 

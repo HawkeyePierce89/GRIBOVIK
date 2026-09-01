@@ -69,3 +69,10 @@ export type Confidence = "certain" | "ambiguous";
 
 /** Which side of the diff a line belongs to. */
 export type DiffTag = "add" | "del" | "context";
+
+declare global {
+  const __GRIBOVIK_EXPORT__: boolean;
+  interface Window {
+    __GRIBOVIK_SNAPSHOT__?: GraphSnapshot;
+  }
+}

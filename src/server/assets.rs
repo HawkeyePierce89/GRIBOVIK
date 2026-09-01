@@ -47,7 +47,7 @@ impl Assets {
     }
 
     /// Read one asset by its request path, or `None` if there is no such file.
-    fn read(&self, path: &str) -> Option<Vec<u8>> {
+    pub fn read(&self, path: &str) -> Option<Vec<u8>> {
         match self {
             Assets::Embedded => Embedded::get(path).map(|file| file.data.into_owned()),
             Assets::Dir(dir) => {

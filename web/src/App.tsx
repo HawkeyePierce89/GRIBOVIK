@@ -23,16 +23,11 @@ import "@xyflow/react/dist/style.css";
 import { ProgressPanel } from "./components/ProgressPanel";
 import { SymbolNode } from "./components/SymbolNode";
 import { gridLayout, layout } from "./lib/layout";
+import { loadSnapshot } from "./lib/snapshot";
 import { toFlow, type SymbolFlowNode } from "./lib/transform";
 import type { GraphSnapshot } from "./types/snapshot";
 
 const nodeTypes = { symbol: SymbolNode } satisfies NodeTypes;
-
-async function getJson<T>(url: string): Promise<T> {
-  const response = await fetch(url);
-  if (!response.ok) throw new Error(`GET ${url} failed: ${response.status}`);
-  return (await response.json()) as T;
-}
 
 /** What the initial fetch produced, once it has landed. */
 type Loaded = {
@@ -53,7 +48,7 @@ export function App() {
     void (async () => {
       try {
         const warnings: string[] = [];
-        const snapshot = await getJson<GraphSnapshot>("/api/graph");
+        const snapshot = await loadSnapshot();
         const flow = toFlow(snapshot);
         // Only the layout, which owns nothing, degrades.
         const nodes = await layout(flow.nodes, flow.edges).catch(
