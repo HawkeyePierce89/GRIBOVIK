@@ -130,7 +130,7 @@ jobs:
             exit 1
           fi
           
-          if ! git ls-remote --tags "https://$GH_TOKEN@github.com/$GH_REPO.git" "refs/tags/$TAG" | grep -q "$GITHUB_SHA"; then
+          if ! git ls-remote --tags origin "refs/tags/$TAG" | grep -q "$GITHUB_SHA"; then
             echo "::error::Remote tag $TAG no longer points to event SHA $GITHUB_SHA"
             exit 1
           fi
