@@ -86,20 +86,20 @@ one paragraph in `CLAUDE.md`.
 - Modify: `tests/export_html.rs`
 - Modify: `src/export.rs` (doc comment only)
 
-- [ ] Decide the deviation in favor of the current behavior: `export::write`
+- [x] Decide the deviation in favor of the current behavior: `export::write`
       keeps creating missing parent directories, so `--export out/review.html`
       works in CI without a preceding `mkdir`. No behavior change to the code.
-- [ ] Update the doc comment on `export::write` in `src/export.rs` so the
+- [x] Update the doc comment on `export::write` in `src/export.rs` so the
       directory creation is documented as intended contract, not an incidental
       detail, in the surrounding style (one short sentence; no new module docs).
-- [ ] Add a test `export_creates_missing_parent_directories` to
+- [x] Add a test `export_creates_missing_parent_directories` to
       `tests/export_html.rs`, following the shape of
       `export_html_writes_a_self_contained_page`: build a temp repo with a
       change, target a nested path under a fresh `TempDir` whose intermediate
       directories do not exist yet (e.g. `out/nested/review.html`), assert
       `gribovik::export::write` returns `Ok`, that the file exists, and that it
       contains `__GRIBOVIK_SNAPSHOT__`.
-- [ ] Run `cargo test` — all tests must pass before Task 3.
+- [x] Run `cargo test` — all tests must pass before Task 3.
 
 ### Task 3: Rewrap the CLAUDE.md paragraph
 

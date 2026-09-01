@@ -132,3 +132,49 @@ fn export_with_no_changes_writes_no_file() {
     let entries: Vec<_> = fs::read_dir(out_dir.path()).unwrap().collect();
     assert!(entries.is_empty(), "expected no files written");
 }
+
+#[test]
+fn export_creates_missing_parent_directories() {
+    let tmp = TempDir::new().unwrap();
+    let dir = tmp.path();
+    init_repo(dir);
+    write_file(dir, "src/counter.rs", "pub fn bump() {}\n");
+    let base = commit(dir, "baseline");
+    write_file(
+        dir,
+        "src/counter.rs",
+        "pub fn bump() { record(); }\npub fn record() {}\n",
+    );
+    let head = commit(dir, "feature");
+
+    let repo = Repo::discover(dir).unwrap();
+    let out_dir = TempDir::new().unwrap();
+    // Neither `out` nor `out/nested` exists yet.
+    let out_file = out_dir
+        .path()
+        .join("out")
+        .join("nested")
+        .join("review.html");
+
+    let args = parse(&[&base, &head, "--export", out_file.to_str().unwrap()]);
+
+    let session = cli::prepare(&repo, &args).unwrap();
+
+    match session {
+        Session::Export {
+            snapshot,
+            assets,
+            path,
+        } => {
+            gribovik::export::write(&assets, &snapshot, &path).unwrap();
+        }
+        _ => panic!("expected Session::Export"),
+    }
+
+    assert!(out_file.exists(), "export did not create {out_file:?}");
+    let html = fs::read_to_string(&out_file).unwrap();
+    assert!(
+        html.contains("__GRIBOVIK_SNAPSHOT__"),
+        "missing snapshot payload"
+    );
+}

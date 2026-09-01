@@ -39,7 +39,9 @@ pub fn embed_snapshot(page: &str, snapshot: &GraphSnapshot) -> Result<String> {
     Ok(result)
 }
 
-/// Reads the `export.html` shell, injects the snapshot, and writes to `path`.
+/// Reads the `export.html` shell, injects the snapshot, and writes to `path`,
+/// creating any missing parent directories so `--export out/review.html`
+/// works without a preceding `mkdir`.
 pub fn write(assets: &Assets, snapshot: &GraphSnapshot, path: &Path) -> Result<()> {
     let page_bytes = assets
         .read("export.html")
