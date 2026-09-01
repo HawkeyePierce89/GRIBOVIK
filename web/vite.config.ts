@@ -5,6 +5,9 @@ import react from "@vitejs/plugin-react";
 // build must stay relative-path free and land in the default `dist`.
 export default defineConfig({
   plugins: [react()],
+  define: {
+    __GRIBOVIK_EXPORT__: "false",
+  },
   server: {
     // `vite dev` talks to a `gribovik --port 7777 --assets web/dist` session;
     // the default `--port 0` is an OS-assigned port this proxy cannot find.

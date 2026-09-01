@@ -87,39 +87,39 @@ writes the result. Serve mode is untouched.
 - Modify: `web/package.json`, `web/vite.config.ts`, `web/src/lib/layout.ts`,
   `web/src/App.tsx`, `web/src/types/snapshot.ts`
 
-- [ ] add `vite-plugin-singlefile` to `devDependencies`; change the `build`
+- [x] add `vite-plugin-singlefile` to `devDependencies`; change the `build`
       script to `tsc --noEmit && vite build && vite build --config
       vite.config.export.ts`
-- [ ] declare `__GRIBOVIK_EXPORT__: boolean` (ambient declaration in
+- [x] declare `__GRIBOVIK_EXPORT__: boolean` (ambient declaration in
       `web/src/types/snapshot.ts` or a small `web/src/vite-env.d.ts`) and set
       `define: { __GRIBOVIK_EXPORT__: "false" }` in `web/vite.config.ts`
-- [ ] create `web/export.html` — the same shell as `web/index.html`, pointing
+- [x] create `web/export.html` — the same shell as `web/index.html`, pointing
       at `/src/main.tsx`
-- [ ] create `web/vite.config.export.ts`: react + `viteSingleFile()`,
+- [x] create `web/vite.config.export.ts`: react + `viteSingleFile()`,
       `define: { __GRIBOVIK_EXPORT__: "true" }`,
       `build: { emptyOutDir: false, rollupOptions: { input: "export.html" } }`
-- [ ] extract the elk instance out of `layout.ts` into `web/src/lib/elk.ts`,
+- [x] extract the elk instance out of `layout.ts` into `web/src/lib/elk.ts`,
       exporting `elk` and `workerFailure(): Promise<never>`; skip the worker
       factory entirely when `__GRIBOVIK_EXPORT__` is true (the existing
       `typeof Worker === "undefined"` guard stays for node tests); keep the
       grid fallback and `LAYOUT_TIMEOUT_MS` in `layout.ts` untouched
-- [ ] create `web/src/lib/snapshot.ts` with
+- [x] create `web/src/lib/snapshot.ts` with
       `loadSnapshot(): Promise<GraphSnapshot>` — return
       `window.__GRIBOVIK_SNAPSHOT__` when present; otherwise throw a clear
       error if `__GRIBOVIK_EXPORT__`, else `fetch("/api/graph")` exactly as
       today
-- [ ] add the `declare global { interface Window { __GRIBOVIK_SNAPSHOT__?:
+- [x] add the `declare global { interface Window { __GRIBOVIK_SNAPSHOT__?:
       GraphSnapshot } }` declaration alongside the wire types
-- [ ] rewrite `App.tsx`'s loading effect to call `loadSnapshot()` instead of
+- [x] rewrite `App.tsx`'s loading effect to call `loadSnapshot()` instead of
       its inline `getJson("/api/graph")`; everything else in the effect stays
-- [ ] write `web/src/lib/snapshot.test.ts`: global present wins; global absent
+- [x] write `web/src/lib/snapshot.test.ts`: global present wins; global absent
       falls back to a mocked `fetch("/api/graph")`; a failing fetch rejects
-- [ ] update `web/src/lib/layout.test.ts` imports if the elk extraction moves
+- [x] update `web/src/lib/layout.test.ts` imports if the elk extraction moves
       any symbol it uses
-- [ ] run `npm run build` and assert by inspection that `web/dist/export.html`
+- [x] run `npm run build` and assert by inspection that `web/dist/export.html`
       exists, `web/dist/index.html` is unchanged in shape, and `export.html`
       contains no `src="/assets/`, no `href="/assets/`, and no `/api/`
-- [ ] run `cd web && npm test && npm run typecheck` — must pass
+- [x] run `cd web && npm test && npm run typecheck` — must pass
 
 ### Task 2: The Rust export module
 

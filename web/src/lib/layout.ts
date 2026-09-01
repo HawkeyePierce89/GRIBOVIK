@@ -6,7 +6,6 @@
  * handed to React Flow.
  */
 
-import ELK from "elkjs/lib/elk.bundled.js";
 import type { Edge } from "@xyflow/react";
 
 import type { SymbolFlowNode } from "./transform";
@@ -34,34 +33,7 @@ const MAX_DIFF_HEIGHT = 256;
  * bundled build honours one. Outside a browser (the unit tests run in node)
  * there is no `Worker`, and the inline fallback is what we want anyway.
  */
-/**
- * Rejects if a layout worker ever fails.
- *
- * elkjs resolves its layout promise from the worker's `onmessage` and installs
- * no `onerror`, so a worker script that fails to load simply never answers.
- * Racing against this turns that silence into a rejection the caller can fall
- * back from, instead of a page that says "Loading…" until the timeout.
- */
-let workerFailed: Promise<never> = new Promise(() => {});
-
-const elk = new ELK(
-  typeof Worker === "undefined"
-    ? {}
-    : {
-        workerFactory: () => {
-          const worker = new Worker(
-            new URL("elkjs/lib/elk-worker.min.js", import.meta.url),
-            { type: "module" },
-          );
-          workerFailed = new Promise((_, reject) => {
-            worker.addEventListener("error", (event) =>
-              reject(new Error(`layout worker failed: ${event.message}`)),
-            );
-          });
-          return worker;
-        },
-      },
-);
+import { elk, workerFailure } from "./elk";
 
 /**
  * `BRANDES_KOEPF` rather than `NETWORK_SIMPLEX`: the simplex placement is
@@ -173,7 +145,7 @@ export async function layout(
   const limit = timeout(LAYOUT_TIMEOUT_MS);
   const laid = await Promise.race([
     elk.layout(graph),
-    workerFailed,
+    workerFailure(),
     limit.promise,
   ]).finally(limit.cancel);
   const placed = new Map(
