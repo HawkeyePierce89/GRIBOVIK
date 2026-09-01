@@ -239,13 +239,13 @@ writes the result. Serve mode is untouched.
 
 ### Task 7: Verify acceptance criteria
 
-- [ ] `cd web && npm ci && npm run build` (regenerates both dist outputs)
-- [ ] `cargo test`
-- [ ] `cargo clippy --all-targets -- -D warnings`
-- [ ] `cargo fmt --check`
-- [ ] `cd web && npm test && npm run typecheck`
-- [ ] `actionlint .github/workflows/pr-graph.yml`
-- [ ] `cargo run -- --export /tmp/review.html <base> <head>` in this repo and
+- [x] `cd web && npm ci && npm run build` (regenerates both dist outputs)
+- [x] `cargo test`
+- [x] `cargo clippy --all-targets -- -D warnings`
+- [x] `cargo fmt --check`
+- [x] `cd web && npm test && npm run typecheck`
+- [x] `actionlint .github/workflows/pr-graph.yml`
+- [x] `cargo run -- --export /tmp/review.html <base> <head>` in this repo and
       confirm one file is produced and it contains no `/assets/` or `/api/`
 
 ## Post-Completion (manual)
