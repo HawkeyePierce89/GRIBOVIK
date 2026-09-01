@@ -240,18 +240,23 @@ fn occurrences(symbols: &[Symbol]) -> (Occurrences<'_>, Vec<usize>) {
 /// worst and pure integer comparison — next to the parse that produced the
 /// symbols it does not register.
 fn spans(symbols: &[Symbol]) -> Vec<Span> {
-    symbols
+    symbols.iter().map(|s| carve(s, symbols)).collect()
+}
+
+/// The span `symbol` claims among its `siblings` — every symbol declared inside
+/// it subtracted from its own range.
+///
+/// Shared with edge resolution so that the lines a card draws arrows from are
+/// the same lines it shows: a Swift or TypeScript type whose span contains its
+/// methods must not be credited with the calls their bodies make.
+pub fn carve(symbol: &Symbol, siblings: &[Symbol]) -> Span {
+    let outer = symbol.range();
+    let inner: Vec<LineRange> = siblings
         .iter()
-        .map(|symbol| {
-            let outer = symbol.range();
-            let inner: Vec<LineRange> = symbols
-                .iter()
-                .map(Symbol::range)
-                .filter(|other| nests_within(*other, outer))
-                .collect();
-            Span::new(outer, inner)
-        })
-        .collect()
+        .map(Symbol::range)
+        .filter(|other| nests_within(*other, outer))
+        .collect();
+    Span::new(outer, inner)
 }
 
 /// Whether `inner` is a *strict* subrange of `outer`.

@@ -131,10 +131,13 @@ fn feed(mut hash: u64, bytes: &[u8]) -> u64 {
 
 /// A short digest of the diff a node is showing.
 ///
-/// Everything the reviewer reads on the card goes in — the tag, both line
-/// numbers and the text of every line — so that a card whose fingerprint is
-/// unchanged is a card whose content is unchanged, and a verdict on it is
-/// still a verdict on what is there now.
+/// The tag and the text of every line go in, and deliberately *not* the line
+/// numbers. What the reviewer approved is the content of the card; where it
+/// sits in the file is not part of that judgement, and hashing the positions
+/// would send every card below an added import back to pending on a branch
+/// that is still being written — which is most of the review, most of the time.
+/// A card whose fingerprint is unchanged is a card whose text is unchanged, and
+/// a verdict on it is still a verdict on what is there now.
 pub fn fingerprint(node: &Node) -> String {
     let mut hash = FNV_OFFSET;
     for line in &node.diff {
@@ -146,8 +149,6 @@ pub fn fingerprint(node: &Node) -> String {
                 DiffTag::Context => b' ',
             }],
         );
-        hash = feed(hash, &line.old_line.unwrap_or(0).to_le_bytes());
-        hash = feed(hash, &line.new_line.unwrap_or(0).to_le_bytes());
         hash = feed(hash, line.text.as_bytes());
         hash = feed(hash, b"\n");
     }
@@ -559,6 +560,34 @@ mod tests {
             fingerprint(&node("src/a.rs::foo", "one")),
             fingerprint(&node("src/a.rs::foo", "two"))
         );
+    }
+
+    /// An edit higher up the file renumbers every line below it without
+    /// touching a word of them. The card is the same card, so the verdict on it
+    /// has to survive; hashing the line numbers is what used to send it back to
+    /// pending.
+    #[test]
+    fn a_fingerprint_ignores_where_in_the_file_the_card_sits() {
+        let here = node("src/a.rs::foo", "same");
+        let mut moved = node("src/a.rs::foo", "same");
+        for line in &mut moved.diff {
+            line.old_line = line.old_line.map(|n| n + 40);
+            line.new_line = line.new_line.map(|n| n + 40);
+        }
+        assert_eq!(fingerprint(&here), fingerprint(&moved));
+
+        let reconciled = reconcile(
+            ReviewState::from([(
+                "src/a.rs::foo".to_string(),
+                NodeReview {
+                    status: Status::Approved,
+                    comments: vec![],
+                    fingerprint: Some(fingerprint(&here)),
+                },
+            )]),
+            &snapshot(vec![moved]),
+        );
+        assert_eq!(reconciled["src/a.rs::foo"].status, Status::Approved);
     }
 
     #[test]

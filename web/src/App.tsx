@@ -178,7 +178,17 @@ function Graph({ loaded }: { loaded: Loaded }) {
             // connections either, so the handles must not offer to make any.
             deleteKeyCode={null}
             nodesConnectable={false}
-            minZoom={0.05}
+            // A card is a whole diff — hundreds of line elements — and a real
+            // branch has hundreds of cards. Keeping the ones outside the
+            // viewport out of the DOM is what keeps clicking Approve from
+            // re-laying-out every diff on the canvas.
+            onlyRenderVisibleElements
+            // Low enough that `fitView` can actually fit the graph. elk packs
+            // the components a diff of a few hundred cards produces into tens
+            // of thousands of pixels each way; clamping at a zoom that cannot
+            // hold that leaves the first paint parked on one slab of the canvas
+            // with no sign of where the rest of it went.
+            minZoom={0.005}
             fitView
           >
             <Background />

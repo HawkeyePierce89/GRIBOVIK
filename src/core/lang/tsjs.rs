@@ -5,7 +5,7 @@
 
 use tree_sitter::{Language, Node};
 
-use crate::core::diff::LineRange;
+use crate::core::diff::Span;
 use crate::core::error::AnalysisError;
 use crate::core::lang::{self, LanguageAnalyzer, Symbol};
 
@@ -67,13 +67,13 @@ impl LanguageAnalyzer for TsJsAnalyzer {
         Ok(out)
     }
 
-    fn calls_in_range(&self, src: &str, range: LineRange) -> Vec<String> {
+    fn calls_in_span(&self, src: &str, span: &Span) -> Vec<String> {
         let Ok(tree) = lang::parse(&self.dialect.language(), src, self.dialect.label()) else {
             return Vec::new();
         };
         let mut out = Vec::new();
         lang::for_each_descendant(tree.root_node(), &mut |node| {
-            if !range.contains(lang::start_line(node)) {
+            if !span.claims(lang::start_line(node)) {
                 return;
             }
             let callee = match node.kind() {
@@ -265,6 +265,7 @@ fn join(prefix: &str, name: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::core::diff::LineRange;
 
     const ADDED_BEFORE: &str = include_str!("../../../tests/fixtures/ts/added_arrow/before.ts");
     const ADDED_AFTER: &str = include_str!("../../../tests/fixtures/ts/added_arrow/after.ts");
@@ -311,7 +312,7 @@ mod tests {
     }
 
     fn calls_with(dialect: Dialect, src: &str, start: u32, end: u32) -> Vec<String> {
-        analyzer(dialect).calls_in_range(src, LineRange::inclusive(start, end))
+        analyzer(dialect).calls_in_span(src, &Span::whole(LineRange::inclusive(start, end)))
     }
 
     fn calls(src: &str, start: u32, end: u32) -> Vec<String> {

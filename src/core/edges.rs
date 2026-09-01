@@ -12,8 +12,9 @@
 
 use std::collections::HashMap;
 
+use crate::core::diff::Span;
 use crate::core::lang::{analyzer_for_extension, LanguageAnalyzer, Symbol};
-use crate::core::nodes::{extension, occurrence_of, FileInput, FILE_KIND};
+use crate::core::nodes::{carve, extension, occurrence_of, FileInput, FILE_KIND};
 use crate::core::snapshot::{ChangeKind, Confidence, Edge, Node};
 
 /// Resolve the calls between `nodes`, which must be the cards `build_nodes`
@@ -46,9 +47,7 @@ pub fn build_edges(files: &[FileInput], nodes: &[Node]) -> Vec<Edge> {
 
     let mut edges = Vec::new();
     for caller in &callables {
-        let calls = caller
-            .analyzer
-            .calls_in_range(caller.src, caller.symbol.range());
+        let calls = caller.analyzer.calls_in_span(caller.src, &caller.span);
         for call in &calls {
             let Some(candidates) = index.get(call.as_str()) else {
                 continue;
@@ -159,12 +158,23 @@ fn directory(path: &str) -> &str {
     }
 }
 
-/// One changed file, parsed once, with its symbols reachable by qualified name.
+/// One changed file, parsed once, with each side's symbols kept in source order
+/// and indexed by qualified name.
+///
+/// The flat list is not redundant with the index: carving a symbol's span needs
+/// every other symbol in the file, not just the ones sharing its name.
 struct Analyzed<'a> {
     file: &'a FileInput,
     analyzer: Box<dyn LanguageAnalyzer>,
-    old: HashMap<String, Vec<Symbol>>,
-    new: HashMap<String, Vec<Symbol>>,
+    old: Side,
+    new: Side,
+}
+
+/// One revision of one file: its symbols, and where to find them by name.
+struct Side {
+    symbols: Vec<Symbol>,
+    /// Qualified name -> positions in `symbols`, in source order.
+    by_name: HashMap<String, Vec<usize>>,
 }
 
 impl<'a> Analyzed<'a> {
@@ -173,8 +183,8 @@ impl<'a> Analyzed<'a> {
     fn of(file: &'a FileInput) -> Option<Self> {
         let analyzer = analyzer_for_extension(extension(&file.path))?;
         Some(Self {
-            old: side_symbols(analyzer.as_ref(), file.old.as_deref()),
-            new: side_symbols(analyzer.as_ref(), file.new.as_deref()),
+            old: Side::of(analyzer.as_ref(), file.old.as_deref()),
+            new: Side::of(analyzer.as_ref(), file.new.as_deref()),
             analyzer,
             file,
         })
@@ -188,15 +198,19 @@ impl<'a> Analyzed<'a> {
     /// to be carried into the lookup. Resolving every `S::fmt` to the first one
     /// would read the wrong body and draw an arrow the code does not contain.
     fn callable<'s>(&'s self, node: &'s Node) -> Option<Callable<'s>> {
-        let (symbols, src) = match node.change {
+        let (side, src) = match node.change {
             ChangeKind::Deleted => (&self.old, self.file.old.as_deref()),
             _ => (&self.new, self.file.new.as_deref()),
         };
-        let symbol = symbols.get(&node.name)?.get(occurrence_of(node))?;
+        let position = *side.by_name.get(&node.name)?.get(occurrence_of(node))?;
+        let symbol = &side.symbols[position];
         Some(Callable {
             node,
             name: symbol.name.as_str(),
-            symbol,
+            // The carved span, matching the lines the card shows: a type whose
+            // range swallows its methods must not claim the calls their bodies
+            // make, or it fans out to callees no line of its own diff mentions.
+            span: carve(symbol, &side.symbols),
             src: src.unwrap_or_default(),
             analyzer: self.analyzer.as_ref(),
         })
@@ -209,29 +223,30 @@ struct Callable<'a> {
     node: &'a Node,
     /// The bare name calls are matched against.
     name: &'a str,
-    symbol: &'a Symbol,
+    /// The lines this card owns: its symbol's range less anything nested.
+    span: Span,
     src: &'a str,
     analyzer: &'a dyn LanguageAnalyzer,
 }
 
-/// Index one side's symbols by qualified name, keeping every declaration in
-/// source order rather than letting the first one win — the same indexing node
-/// construction does, so the *n*-th card of a name lines up with the *n*-th
-/// symbol here. An unparsable side simply has no symbols.
-fn side_symbols(
-    analyzer: &dyn LanguageAnalyzer,
-    src: Option<&str>,
-) -> HashMap<String, Vec<Symbol>> {
-    let Some(symbols) = src.and_then(|src| analyzer.symbols(src).ok()) else {
-        return HashMap::new();
-    };
-    let mut out: HashMap<String, Vec<Symbol>> = HashMap::new();
-    for symbol in symbols {
-        out.entry(symbol.qualified_name.clone())
-            .or_default()
-            .push(symbol);
+impl Side {
+    /// Index one side's symbols by qualified name, keeping every declaration in
+    /// source order rather than letting the first one win — the same indexing
+    /// node construction does, so the *n*-th card of a name lines up with the
+    /// *n*-th symbol here. An unparsable side simply has no symbols.
+    fn of(analyzer: &dyn LanguageAnalyzer, src: Option<&str>) -> Self {
+        let symbols = src
+            .and_then(|src| analyzer.symbols(src).ok())
+            .unwrap_or_default();
+        let mut by_name: HashMap<String, Vec<usize>> = HashMap::new();
+        for (position, symbol) in symbols.iter().enumerate() {
+            by_name
+                .entry(symbol.qualified_name.clone())
+                .or_default()
+                .push(position);
+        }
+        Self { symbols, by_name }
     }
-    out
 }
 
 #[cfg(test)]
@@ -469,10 +484,14 @@ fn run(counter: &Counter) {
         assert!(edges_of(&files).is_empty());
     }
 
-    /// Nested spans mean a type's card sees its members' calls too, which is
-    /// what makes the type card a useful summary of the change.
+    /// A type's range contains its methods', but its *card* does not: the
+    /// carved span leaves the class node holding its declaration lines alone.
+    /// Edges follow the same carving, so the call inside `bump` is `bump`'s
+    /// arrow and not also the class's — an arrow out of a card whose diff never
+    /// mentions the callee is one the reviewer cannot check, and on a class with
+    /// twenty methods it draws twenty duplicates over the real ones.
     #[test]
-    fn typescript_calls_resolve_through_the_enclosing_class() {
+    fn a_call_in_a_method_is_not_also_an_edge_out_of_its_class() {
         let source = "\
 function helper(): number {
   return 1;
@@ -486,10 +505,7 @@ export class Counter {
 ";
         assert_eq!(
             edges_of(&[FileInput::added("web/counter.ts", source)]),
-            vec![
-                "web/counter.ts::Counter -> web/counter.ts::helper (certain)",
-                "web/counter.ts::Counter.bump -> web/counter.ts::helper (certain)",
-            ]
+            vec!["web/counter.ts::Counter.bump -> web/counter.ts::helper (certain)"]
         );
     }
 

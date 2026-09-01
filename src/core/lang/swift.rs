@@ -2,7 +2,7 @@
 
 use tree_sitter::{Language, Node};
 
-use crate::core::diff::LineRange;
+use crate::core::diff::Span;
 use crate::core::error::AnalysisError;
 use crate::core::lang::{self, LanguageAnalyzer, Symbol};
 
@@ -29,13 +29,13 @@ impl LanguageAnalyzer for SwiftAnalyzer {
         Ok(out)
     }
 
-    fn calls_in_range(&self, src: &str, range: LineRange) -> Vec<String> {
+    fn calls_in_span(&self, src: &str, span: &Span) -> Vec<String> {
         let Ok(tree) = lang::parse(&language(), src, "swift") else {
             return Vec::new();
         };
         let mut out = Vec::new();
         lang::for_each_descendant(tree.root_node(), &mut |node| {
-            if node.kind() != "call_expression" || !range.contains(lang::start_line(node)) {
+            if node.kind() != "call_expression" || !span.claims(lang::start_line(node)) {
                 return;
             }
             // The callee is the first named child; `call_suffix` (arguments and
@@ -167,6 +167,7 @@ fn join(prefix: &str, name: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::core::diff::LineRange;
 
     const ADDED_BEFORE: &str =
         include_str!("../../../tests/fixtures/swift/added_func/before.swift");
@@ -212,7 +213,7 @@ mod tests {
     }
 
     fn calls(src: &str, start: u32, end: u32) -> Vec<String> {
-        SwiftAnalyzer.calls_in_range(src, LineRange::inclusive(start, end))
+        SwiftAnalyzer.calls_in_span(src, &Span::whole(LineRange::inclusive(start, end)))
     }
 
     #[test]

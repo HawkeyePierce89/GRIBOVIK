@@ -103,7 +103,9 @@ what falls in their span, and in Swift and TypeScript — where a type's span
 contains its members' — a line goes to the *innermost* symbol holding it, so a
 method-body edit is the method's alone and the enclosing class is not asked for
 a second verdict on the same change. `diff::Span` is the carved span:
-`nodes::spans` subtracts every strictly-nested sibling range from each symbol's.
+`nodes::carve` subtracts every strictly-nested sibling range from each symbol's.
+`edges.rs` carves the same way, so the call sites a card draws arrows from are
+the call sites its diff shows.
 Whatever no symbol claims goes to the file card, decided **line by
 line, not hunk by hunk** — a single hunk routinely straddles a symbol boundary,
 and counting it as reviewed because the symbol claimed part of it is how
@@ -115,8 +117,9 @@ The same rule applies to `ReviewState` in `src/review.rs` and its TS twin.
 The state file is keyed by branch, not by commit, so it deliberately outlives
 the commits it describes — a new commit must not orphan a review of four
 hundred cards. What keeps that from replaying an approval over rewritten code
-is the `fingerprint` on each entry: the server stamps it from the node's diff
-on every write, and `review::reconcile` — run once in `cli.rs`, on the state
+is the `fingerprint` on each entry: the server stamps it from the tags and text of the
+node's diff — not the line numbers, so an edit higher up the file does not
+invalidate a card whose own text is untouched — on every write, and `review::reconcile` — run once in `cli.rs`, on the state
 loaded at startup — sends every entry whose fingerprint no longer matches back
 to pending, keeping its comments. The browser only carries the field back and
 forth, so the hash lives on one side.
@@ -131,7 +134,9 @@ path returns `index.html` so client-side routing works):
 - `GET /api/state` — the verdicts recorded so far.
 - `POST /api/state` — **replaces** the whole `ReviewState` and answers 204,
   stamping each entry with `review::fingerprint` of the node it names on the
-  way to disk.
+  way to disk. The disk write comes first: a failed write answers 500 and
+  leaves the in-memory state alone, so `GET /api/state` never serves a verdict
+  the reviewer was told was not saved.
 
 Every request must address the server by a loopback name — a middleware rejects
 any other `Host` with 403. Binding loopback stops the network, but not a page
@@ -161,8 +166,11 @@ hand: in a linked worktree or a submodule that path is a file, not a directory.
      within a file (`Type::method` in Rust, `Type.method` elsewhere) and
      `kind` must never be `"file"` — that string is reserved for the synthetic
      file-level node (`nodes::FILE_KIND`).
-   - `calls_in_range(&self, src, range) -> Vec<String>` — bare callee names
-     from lines inside `range`, first-occurrence order, deduplicated. Return an
+   - `calls_in_span(&self, src, span) -> Vec<String>` — bare callee names
+     from the lines `span` claims, first-occurrence order, deduplicated. A
+     `diff::Span`, not a plain range, because a type's range contains its
+     methods' and a card's arrows must come from the lines that card shows;
+     `Span::whole(range)` covers a symbol with nothing nested. Return an
      empty list on an unparsable source rather than erroring: a missing edge
      degrades better than a failed analysis. Bare names are all the edge
      resolver has, so strip receivers and paths down to the final segment.

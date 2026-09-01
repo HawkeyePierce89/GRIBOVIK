@@ -14,7 +14,7 @@ pub mod tsjs;
 
 use tree_sitter::{Language, Node, Tree};
 
-use crate::core::diff::LineRange;
+use crate::core::diff::{LineRange, Span};
 use crate::core::error::AnalysisError;
 
 /// A named, line-delimited region of a source file: the unit a review card is
@@ -52,10 +52,15 @@ pub trait LanguageAnalyzer {
     /// Every top-level and type-level symbol in `src`, in source order.
     fn symbols(&self, src: &str) -> Result<Vec<Symbol>, AnalysisError>;
 
-    /// Bare callee names invoked from lines inside `range`, first occurrence
-    /// order, deduplicated. Unparsable sources yield an empty list rather than
-    /// an error: a missing edge degrades better than a failed analysis.
-    fn calls_in_range(&self, src: &str, range: LineRange) -> Vec<String>;
+    /// Bare callee names invoked from the lines `span` claims, first
+    /// occurrence order, deduplicated. Unparsable sources yield an empty list
+    /// rather than an error: a missing edge degrades better than a failed
+    /// analysis.
+    ///
+    /// A span, not a plain range, because a type's range contains its methods'
+    /// and the arrows a card draws have to come from the lines that card shows.
+    /// Pass `Span::whole(range)` for a symbol with nothing nested inside it.
+    fn calls_in_span(&self, src: &str, span: &Span) -> Vec<String>;
 }
 
 /// The analyzer registry, keyed by file extension (with or without a dot).

@@ -204,16 +204,23 @@ async fn post_state(
     // disk in the order they took it. Dropping the guard first would let an
     // older state win the race and outlive the newer one the browser is showing.
     let mut guard = state.lock();
-    *guard = incoming;
+    let mut incoming = incoming;
     // Stamped here, against the snapshot this process is serving: a verdict
     // arriving now is a verdict on the code the browser is showing, and
     // recording which code that was is what stops the next run from replaying
     // it over a rewritten symbol. The client never computes or reads the
     // field — it only carries it back and forth.
-    review::stamp(&mut guard, &state.snapshot);
+    review::stamp(&mut incoming, &state.snapshot);
 
-    match review::save(&state.state_path, &guard) {
-        Ok(()) => StatusCode::NO_CONTENT.into_response(),
+    // Disk first, memory second. A 500 tells the browser the verdict is not
+    // durable, and `GET /api/state` has to say the same thing: committing the
+    // change here anyway would serve the unsaved state back on the next reload,
+    // clearing the banner and hiding a loss that only surfaces after exit.
+    match review::save(&state.state_path, &incoming) {
+        Ok(()) => {
+            *guard = incoming;
+            StatusCode::NO_CONTENT.into_response()
+        }
         Err(err) => (
             StatusCode::INTERNAL_SERVER_ERROR,
             format!("could not save review state: {err:#}"),
@@ -461,6 +468,35 @@ mod tests {
         .await;
 
         assert_eq!(review::load(&path), stamped());
+    }
+
+    /// A 500 says the verdict is not on disk, and `GET /api/state` has to keep
+    /// saying so. Committing the post in memory anyway would serve it back on
+    /// the next reload, clear the browser's banner, and turn a loss the reviewer
+    /// was told about into one they only discover after the process exits.
+    #[tokio::test]
+    async fn a_state_that_could_not_be_written_is_not_kept_in_memory() {
+        let dir = TempDir::new().unwrap();
+        // A directory where the state file belongs: the rename cannot land.
+        let path = review::state_path(dir.path(), "abc123", "HEAD");
+        std::fs::create_dir_all(&path).unwrap();
+        let app = router(Arc::new(AppState::new(
+            snapshot(),
+            ReviewState::new(),
+            path,
+            Assets::Embedded,
+        )));
+
+        let posted = post_json(
+            &app,
+            "/api/state",
+            serde_json::to_string(&review()).unwrap(),
+        )
+        .await;
+        assert_eq!(posted.status(), StatusCode::INTERNAL_SERVER_ERROR);
+
+        let fetched = get(&app, "/api/state").await;
+        assert_eq!(body_json::<ReviewState>(fetched).await, ReviewState::new());
     }
 
     /// The fingerprint is what stops the next run from replaying an approval
