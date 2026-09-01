@@ -23,7 +23,7 @@ describe("loadSnapshot", () => {
   it("returns window.__GRIBOVIK_SNAPSHOT__ when present", async () => {
     const dummySnapshot = { meta: { repo: "test" } } as GraphSnapshot;
     window.__GRIBOVIK_SNAPSHOT__ = dummySnapshot;
-    
+
     // We can explicitly test the behavior regardless of __GRIBOVIK_EXPORT__
     // by mocking it, but it should return the globalThis anyway.
     const result = await loadSnapshot();
@@ -31,7 +31,7 @@ describe("loadSnapshot", () => {
   });
 
   it("falls back to fetch(/api/graph) when globalThis absent", async () => {
-    // Vitest runs in Node, where __GRIBOVIK_EXPORT__ is undefined in test context, 
+    // Vitest runs in Node, where __GRIBOVIK_EXPORT__ is undefined in test context,
     // unless mocked. But let's assume the test environment will evaluate it.
     // In our tsconfig, we declared it. We can just mock fetch.
     const dummySnapshot = { meta: { repo: "fetched" } } as GraphSnapshot;
