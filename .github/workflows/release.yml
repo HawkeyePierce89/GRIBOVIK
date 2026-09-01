@@ -16,7 +16,7 @@ jobs:
     outputs:
       version: ${{ steps.resolve.outputs.version }}
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@v4
       - name: Resolve version
         id: resolve
         shell: bash
@@ -52,8 +52,8 @@ jobs:
           - target: x86_64-pc-windows-msvc
             os: windows-latest
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-node@v7
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
         with:
           node-version: '22'
           cache: npm
@@ -96,7 +96,7 @@ jobs:
           $env:NAME = "gribovik-$env:VERSION-$env:TARGET"
           New-Item -ItemType Directory -Force dist
           Compress-Archive -Path target/release/gribovik.exe -DestinationPath "dist/${env:NAME}.zip"
-      - uses: actions/upload-artifact@v7
+      - uses: actions/upload-artifact@v4
         with:
           name: gribovik-${{ matrix.target }}
           path: dist/*
@@ -109,8 +109,8 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/download-artifact@v8
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
         with:
           path: dist
           pattern: gribovik-*
@@ -130,7 +130,7 @@ jobs:
             exit 1
           fi
           
-          if ! git ls-remote --tags origin "refs/tags/$TAG" | grep -q "$GITHUB_SHA"; then
+          if ! git ls-remote --tags origin "refs/tags/$TAG*" | grep -q "$GITHUB_SHA"; then
             echo "::error::Remote tag $TAG no longer points to event SHA $GITHUB_SHA"
             exit 1
           fi
