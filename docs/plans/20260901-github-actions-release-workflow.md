@@ -189,17 +189,17 @@ changes.
 **Files:**
 - Modify: `README.md`
 
-- [ ] Add a short `## Install from a release` section immediately before the
+- [x] Add a short `## Install from a release` section immediately before the
       existing `## Build` heading (line ~69) — a couple of sentences saying
       tagged releases carry prebuilt binaries for the five targets, linking
       `https://github.com/HawkeyePierce89/GRIBOVIK/releases`, naming the
       `gribovik-<version>-<target>.tar.gz` / `.zip` convention, and noting that
       `git` still has to be on the `PATH` at runtime. Building from source stays
       the section right below.
-- [ ] Do not restructure anything else in the README, and leave `CLAUDE.md`
+- [x] Do not restructure anything else in the README, and leave `CLAUDE.md`
       untouched — the workflow is infrastructure, and the README note is the one
       place its existence is documented.
-- [ ] Verify: `grep -n "Install from a release" README.md` finds the new
+- [x] Verify: `grep -n "Install from a release" README.md` finds the new
       heading and the surrounding sections are intact.
 
 ### Task 5: Verify acceptance criteria

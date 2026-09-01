@@ -66,6 +66,10 @@ The graph pans and zooms, with a minimap and controls in the corners; a dashed
 edge is one the call resolver was not sure about. Warnings from the analysis
 sit in a banner at the top.
 
+## Install from a release
+
+Tagged releases carry prebuilt binaries for five targets on the [Releases page](https://github.com/HawkeyePierce89/GRIBOVIK/releases). Download the archive for your platform (named `gribovik-<version>-<target>.tar.gz` or `.zip`), extract it, and place the `gribovik` binary anywhere on your `PATH`. Note that `git` still must be on your `PATH` at runtime.
+
 ## Build
 
 The binary embeds the frontend, so the SPA must be built first. `build.rs`
