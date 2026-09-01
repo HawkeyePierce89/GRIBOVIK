@@ -56,17 +56,16 @@ export function App() {
 
     void (async () => {
       try {
-        // Only the snapshot is worth failing over. Degrading beats failing
-        // for the other two: previously recorded verdicts and elk positions
-        // are both things a review can start without, and losing the whole
-        // graph over either is a worse answer than saying what was lost.
+        // Both fetches are fatal, and the state one is fatal for a sharper
+        // reason than the snapshot: `POST /api/state` replaces the whole
+        // object, so starting from an empty review after a failed read means
+        // the reviewer's first click writes that emptiness over everything
+        // they had recorded before. Degrading here destroys data instead of
+        // saving it. Only the layout, which owns nothing, degrades.
         const warnings: string[] = [];
         const [snapshot, initialState] = await Promise.all([
           getJson<GraphSnapshot>("/api/graph"),
-          getJson<ReviewState>("/api/state").catch((cause: unknown) => {
-            warnings.push(`starting from an empty review: ${String(cause)}`);
-            return {} as ReviewState;
-          }),
+          getJson<ReviewState>("/api/state"),
         ]);
         const flow = toFlow(snapshot);
         // Laying out with the saved state, not an empty one: cards that

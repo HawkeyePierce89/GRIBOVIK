@@ -134,12 +134,17 @@ Statuses and comments are written to:
 `<repo>/.git`, but a linked worktree or a submodule keeps its data elsewhere,
 and every worktree of a repository shares one review.
 
-The base component is the **resolved merge base**, not the revision you typed,
-so `gribovik origin/master` writes something like `9f3c1e…a2..HEAD.json`.
-Slashes in the head become `-` (`feature/x` → `feature-x`). One consequence is
-worth knowing: fetching new commits onto the base branch or rebasing moves the
-merge base, which starts a fresh review file — the old marks stay on disk under
-the old merge base but are no longer loaded.
+The base component is the **resolved merge base**, not the revision you typed.
+The head component is the revision you typed, except that a bare `HEAD` — the
+default — is expanded to the branch you are on, or to the short commit if the
+checkout is detached. Two branches cut from the same commit share a merge base,
+so without that expansion they would share a review file and each would open on
+the other's verdicts. `gribovik origin/master` on `feature/x` therefore writes
+something like `9f3c1e…a2..feature-x.json`; slashes in the head become `-`.
+
+One consequence is worth knowing: fetching new commits onto the base branch or
+rebasing moves the merge base, which starts a fresh review file — the old marks
+stay on disk under the old merge base but are no longer loaded.
 
 The file is JSON keyed by node id (`<file>::<qualified_name>`), written
 atomically, and stable across saves so it diffs cleanly if you ever open it.

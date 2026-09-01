@@ -212,6 +212,11 @@ fn fixture_repo(dir: &Path) -> String {
     base
 }
 
+/// Where the review state for a snapshot would be written.
+fn state_path(dir: &Path, meta: &gribovik::core::Meta) -> PathBuf {
+    gribovik::review::state_path(dir.join(".git"), &meta.base, &meta.head)
+}
+
 fn expect_graph(analysis: Analysis) -> GraphSnapshot {
     match analysis {
         Analysis::Graph(snapshot) => *snapshot,
@@ -281,7 +286,9 @@ fn analyzes_a_multi_language_change_end_to_end() {
     assert_ids_are_unique(&snapshot);
     assert_eq!(snapshot.meta.repo, canonical(dir).display().to_string());
     assert_eq!(snapshot.meta.base, base);
-    assert_eq!(snapshot.meta.head, "HEAD");
+    // `HEAD` is expanded to the branch it names, so that two branches off the
+    // same base do not file their reviews under one name.
+    assert_eq!(snapshot.meta.head, "master");
     // The six source files; `README.md` never reaches the core.
     assert_eq!(snapshot.meta.files_changed, 6);
     assert!(
@@ -475,6 +482,32 @@ fn an_explicit_head_revision_is_reported_as_written() {
     assert!(!snapshot.nodes.is_empty());
 }
 
+/// Two branches cut from the same commit share a merge base, so the head is
+/// the only part of the state file name that can tell them apart. Reported as
+/// the literal `HEAD` they collide, and one branch's verdicts show up already
+/// applied to the other's code.
+#[test]
+fn the_default_head_is_reported_as_the_branch_it_is_on() {
+    let tmp = TempDir::new().unwrap();
+    let dir = tmp.path();
+    let base = fixture_repo(dir);
+    let repo = Repo::discover(dir).unwrap();
+
+    git(dir, &["checkout", "-q", "-b", "feature-a"]);
+    let a = expect_graph(analyze(&repo, Some(&base), None).unwrap());
+    git(dir, &["checkout", "-q", "-b", "feature-b"]);
+    let b = expect_graph(analyze(&repo, Some(&base), None).unwrap());
+
+    assert_eq!(a.meta.head, "feature-a");
+    assert_eq!(b.meta.head, "feature-b");
+    assert_eq!(a.meta.base, b.meta.base, "both branches share the base");
+    assert_ne!(
+        state_path(dir, &a.meta),
+        state_path(dir, &b.meta),
+        "the two branches must not share a review state file"
+    );
+}
+
 #[test]
 fn a_range_with_no_source_changes_reports_no_changes() {
     let tmp = TempDir::new().unwrap();
@@ -493,7 +526,7 @@ fn a_range_with_no_source_changes_reports_no_changes() {
         analysis,
         Analysis::NoChanges {
             base,
-            head: "HEAD".to_string(),
+            head: "master".to_string(),
             warnings: Vec::new(),
         }
     );

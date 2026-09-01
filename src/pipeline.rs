@@ -60,12 +60,17 @@ impl Analysis {
 /// `base` is resolved the way [`Repo::resolve_base`] describes — an explicit
 /// revision or the `origin/master`/`origin/main` fallback, in both cases
 /// reduced to the merge base with `head`, so the graph shows what `head` added
-/// rather than what the base branch moved on to. `head` defaults to `HEAD` and
-/// is kept as written: review state is filed under this name, and a branch
-/// name stays stable across new commits where a sha would not.
+/// rather than what the base branch moved on to. `head` defaults to `HEAD`.
+///
+/// The reported head is [`Repo::head_label`] of that revision rather than the
+/// literal string: review state is filed under this name, and the bare `HEAD`
+/// names every branch cut from the same base commit at once. A branch name
+/// discriminates and still stays stable across new commits where a sha would
+/// not.
 pub fn analyze(repo: &Repo, base: Option<&str>, head: Option<&str>) -> Result<Analysis> {
     let head = head.unwrap_or(DEFAULT_HEAD);
     let base = repo.resolve_base(base, head)?;
+    let label = repo.head_label(head);
 
     let mut warnings = Vec::new();
     let mut files = Vec::new();
@@ -100,7 +105,7 @@ pub fn analyze(repo: &Repo, base: Option<&str>, head: Option<&str>) -> Result<An
     if files.is_empty() {
         return Ok(Analysis::NoChanges {
             base,
-            head: head.to_string(),
+            head: label,
             warnings,
         });
     }
@@ -108,14 +113,14 @@ pub fn analyze(repo: &Repo, base: Option<&str>, head: Option<&str>) -> Result<An
     let meta = MetaInput {
         repo: repo.root().display().to_string(),
         base: base.clone(),
-        head: head.to_string(),
+        head: label.clone(),
         warnings,
     };
     let snapshot = build_snapshot(meta, &files);
     if snapshot.nodes.is_empty() {
         return Ok(Analysis::NoChanges {
             base,
-            head: head.to_string(),
+            head: label,
             warnings: snapshot.meta.warnings,
         });
     }

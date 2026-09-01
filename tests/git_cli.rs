@@ -4,6 +4,7 @@
 //! the only way to be sure the flags and output parsing agree with reality.
 
 use std::fs;
+use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
@@ -365,5 +366,113 @@ fn a_linked_worktree_resolves_to_the_main_git_directory() {
     assert_eq!(
         git_dir.canonicalize().unwrap(),
         dir.path().join(".git").canonicalize().unwrap()
+    );
+}
+
+/// Review state is filed under `<merge-base>..<head>`, so the head name is the
+/// only thing that tells two branches cut from the same commit apart. Left as
+/// the literal `HEAD` they share a file, and one branch's verdicts land
+/// pre-applied on the other's code.
+#[test]
+fn the_default_head_is_labelled_with_the_branch_it_is_on() {
+    let (dir, repo) = seeded_repo();
+    git(dir.path(), &["checkout", "-q", "-b", "feature-a"]);
+
+    assert_eq!(repo.head_label("HEAD"), "feature-a");
+
+    git(dir.path(), &["checkout", "-q", "-b", "feature-b"]);
+
+    assert_eq!(repo.head_label("HEAD"), "feature-b");
+}
+
+#[test]
+fn a_detached_head_is_labelled_with_its_commit() {
+    let (dir, repo) = seeded_repo();
+    let sha = head_sha(dir.path());
+    git(dir.path(), &["checkout", "-q", "--detach", &sha]);
+
+    let label = repo.head_label("HEAD");
+
+    assert_ne!(label, "HEAD", "a detached HEAD names no branch");
+    assert!(
+        sha.starts_with(&label) && !label.is_empty(),
+        "expected a prefix of {sha}, got {label}"
+    );
+}
+
+#[test]
+fn an_explicit_revision_is_left_as_the_reviewer_wrote_it() {
+    let (dir, repo) = seeded_repo();
+    git(dir.path(), &["checkout", "-q", "-b", "feature-a"]);
+
+    assert_eq!(repo.head_label("master"), "master");
+}
+
+/// Run git in `dir` with `stdin`, asserting success and returning raw stdout.
+fn git_stdin(dir: &Path, args: &[&str], stdin: &[u8]) -> Vec<u8> {
+    let mut child = Command::new("git")
+        .arg("-C")
+        .arg(dir)
+        .args(args)
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .spawn()
+        .expect("git is installed");
+    child
+        .stdin
+        .as_mut()
+        .unwrap()
+        .write_all(stdin)
+        .expect("git took its input");
+    let out = child.wait_with_output().unwrap();
+    assert!(
+        out.status.success(),
+        "git {args:?} failed: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    out.stdout
+}
+
+/// Paths are bytes to git, so a repository can hold a file whose name is not
+/// UTF-8 — and one of those anywhere in the range used to abort the whole
+/// review with "git printed non-UTF-8 output", even though nothing else in it
+/// was affected. The tree is built with `mktree` rather than on disk because
+/// APFS refuses to create such a name at all.
+#[test]
+fn a_path_that_is_not_utf8_does_not_abort_the_diff() {
+    let (dir, repo) = seeded_repo();
+    let base = head_sha(dir.path());
+
+    let blob = git(dir.path(), &["hash-object", "-w", "--stdin"]);
+    // `mktree` builds one level, so both entries are top-level and in sorted
+    // order: 0xe9 sorts after `k`.
+    let mut spec = format!("100644 blob {blob}\tkeep.rs\n100644 blob {blob}\t").into_bytes();
+    spec.extend_from_slice(&[0xe9]);
+    spec.extend_from_slice(b".rs\n");
+    let tree = String::from_utf8(git_stdin(dir.path(), &["mktree"], &spec))
+        .unwrap()
+        .trim()
+        .to_string();
+    let head = git(
+        dir.path(),
+        &["commit-tree", &tree, "-p", &base, "-m", "weird"],
+    );
+
+    let changed = repo.changed_files(&base, &head).unwrap();
+
+    // The undecodable name survives as a lossy placeholder rather than taking
+    // the run down with it; reading that path reports it missing by name.
+    assert!(
+        changed
+            .iter()
+            .any(|file| file.path == "keep.rs" && file.status == FileStatus::Added),
+        "got {changed:?}"
+    );
+    assert!(
+        changed
+            .iter()
+            .any(|file| file.path.ends_with(".rs")
+                && file.path.contains(char::REPLACEMENT_CHARACTER)),
+        "got {changed:?}"
     );
 }

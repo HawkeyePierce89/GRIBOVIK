@@ -53,6 +53,12 @@ impl LanguageAnalyzer for RustAnalyzer {
                         lang::push_unique(&mut out, &base_type_name(name, src));
                     }
                 }
+                // Macro arguments are an opaque `token_tree`, not expressions,
+                // so `println!("{}", extra())` holds no `call_expression` at
+                // all. Rust code calls through `format!`, `assert_eq!`, `vec!`
+                // and friends constantly; skipping them leaves a large share of
+                // real call sites out of the graph.
+                "token_tree" => push_token_tree_calls(node, src, &mut out),
                 _ => {}
             }
         });
@@ -109,6 +115,31 @@ fn push_symbol(node: Node, src: &str, prefix: &str, kind: &str, out: &mut Vec<Sy
         start_line: lang::leading_line(node, PRELUDE_KINDS),
         end_line: lang::end_line(node),
     });
+}
+
+/// Emit the calls spelled out in the raw tokens of a macro argument list.
+///
+/// Inside a `token_tree` nothing is an expression — a call is just an
+/// `identifier` sitting next to a parenthesized `token_tree`. Requiring the
+/// parentheses is what keeps `matches!(x, Foo { .. })` from reading as a call
+/// to `Foo`, and taking the identifier adjacent to the parentheses resolves
+/// `Type::assoc()` on its last segment exactly as `callee_name` does.
+///
+/// Nested token trees are reached by the caller's descendant walk, so this only
+/// looks at direct children.
+fn push_token_tree_calls(tree: Node, src: &str, out: &mut Vec<String>) {
+    let mut cursor = tree.walk();
+    let children: Vec<Node> = tree.children(&mut cursor).collect();
+    for pair in children.windows(2) {
+        let (name, args) = (pair[0], pair[1]);
+        if name.kind() != "identifier" || args.kind() != "token_tree" {
+            continue;
+        }
+        if !src[args.byte_range()].starts_with('(') {
+            continue;
+        }
+        lang::push_unique(out, lang::text(name, src));
+    }
 }
 
 /// The bare callee name of a call, or `None` for shapes we cannot attribute
@@ -343,6 +374,24 @@ fn caller() {
     #[test]
     fn a_struct_literal_counts_as_a_use_of_the_type() {
         assert_eq!(calls(DELETED_BEFORE, 11, 13), vec!["id", "Legacy"]);
+    }
+
+    #[test]
+    fn calls_inside_macro_arguments_are_found() {
+        let src = "fn caller() {\n    println!(\"{}\", extra());\n    let v = vec![make()];\n    \
+                   assert_eq!(Counter::compute(), 1);\n    direct();\n}\n";
+        assert_eq!(
+            calls(src, 1, 6),
+            vec!["extra", "make", "compute", "direct"],
+            "macro arguments are raw tokens, not expressions, so the calls in \
+             them have to be read off the token tree"
+        );
+    }
+
+    #[test]
+    fn a_braced_type_in_a_macro_is_not_a_call() {
+        let src = "fn caller() {\n    matches!(x, Foo { .. });\n}\n";
+        assert_eq!(calls(src, 1, 3), Vec::<String>::new());
     }
 
     #[test]

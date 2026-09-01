@@ -102,6 +102,43 @@ impl Repo {
             .unwrap_or(false)
     }
 
+    /// A name for `rev` that tells two branches apart.
+    ///
+    /// Review state is filed under `<base>..<head>`, and `base` is a merge
+    /// base: two branches cut from the same commit share it. Left as written,
+    /// the default `HEAD` makes them share the whole file name too, so one
+    /// branch's verdicts show up pre-applied to the other's code and the first
+    /// click there overwrites them. Expanding `HEAD` to the branch it is on
+    /// discriminates without giving up the stability a branch name has over a
+    /// sha — a new commit does not orphan the review. A detached `HEAD` has no
+    /// branch to name, so it falls back to the commit it points at, which is
+    /// exactly as stable as the checkout itself.
+    ///
+    /// Any other revision is already a name the reviewer chose and is returned
+    /// untouched.
+    pub fn head_label(&self, rev: &str) -> String {
+        if rev != "HEAD" {
+            return rev.to_string();
+        }
+        let branch = self
+            .git(&["rev-parse", "--abbrev-ref", "HEAD"])
+            .ok()
+            .filter(|out| out.status.success())
+            .and_then(|out| stdout_string(&out).ok())
+            .map(|name| name.trim().to_string());
+        match branch {
+            Some(name) if name != "HEAD" && !name.is_empty() => name,
+            _ => self
+                .git(&["rev-parse", "--short", "HEAD"])
+                .ok()
+                .filter(|out| out.status.success())
+                .and_then(|out| stdout_string(&out).ok())
+                .map(|sha| sha.trim().to_string())
+                .filter(|sha| !sha.is_empty())
+                .unwrap_or_else(|| rev.to_string()),
+        }
+    }
+
     /// Resolve the revision the diff is taken from.
     ///
     /// With an explicit base, that revision is verified; without one,
@@ -150,7 +187,12 @@ impl Repo {
         if !out.status.success() {
             bail!("git diff {base}..{head} failed: {}", stderr_string(&out));
         }
-        parse_name_status(&stdout_string(&out)?)
+        // Lossy on purpose. Paths are bytes to git, and one file with a
+        // non-UTF-8 name — a stray latin-1 asset that the extension filter
+        // would drop on the next line anyway — must not abort the review of
+        // everything else. A mangled path that does reach `blob` reads as
+        // missing, which `read_side` already reports by name.
+        parse_name_status(&String::from_utf8_lossy(&out.stdout))
     }
 
     /// Read `path` as it exists at `rev`.

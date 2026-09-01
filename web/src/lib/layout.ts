@@ -40,14 +40,32 @@ const MAX_COMMENTS_HEIGHT = 128;
  * bundled build honours one. Outside a browser (the unit tests run in node)
  * there is no `Worker`, and the inline fallback is what we want anyway.
  */
+/**
+ * Rejects if a layout worker ever fails.
+ *
+ * elkjs resolves its layout promise from the worker's `onmessage` and installs
+ * no `onerror`, so a worker script that fails to load simply never answers.
+ * Racing against this turns that silence into a rejection the caller can fall
+ * back from, instead of a page that says "Loading…" until the timeout.
+ */
+let workerFailed: Promise<never> = new Promise(() => {});
+
 const elk = new ELK(
   typeof Worker === "undefined"
     ? {}
     : {
-        workerFactory: () =>
-          new Worker(new URL("elkjs/lib/elk-worker.min.js", import.meta.url), {
-            type: "module",
-          }),
+        workerFactory: () => {
+          const worker = new Worker(
+            new URL("elkjs/lib/elk-worker.min.js", import.meta.url),
+            { type: "module" },
+          );
+          workerFailed = new Promise((_, reject) => {
+            worker.addEventListener("error", (event) =>
+              reject(new Error(`layout worker failed: ${event.message}`)),
+            );
+          });
+          return worker;
+        },
       },
 );
 
@@ -118,8 +136,34 @@ export function gridLayout(
 }
 
 /**
+ * How long elk gets before the caller stops waiting for it.
+ *
+ * Not a performance budget — measured layout of an ordinary branch is under a
+ * second. It is the only way out of a worker that never answers: elkjs wraps
+ * the worker in a promise it resolves from `onmessage` and installs no error
+ * handler, so a worker script that fails to load leaves a promise that never
+ * settles and a page stuck on "Loading…" forever. Rejecting is what makes the
+ * caller's grid fallback — written for exactly this — reachable.
+ */
+const LAYOUT_TIMEOUT_MS = 30_000;
+
+/** Reject after `ms`, and never keep a timer alive past the race. */
+function timeout(ms: number): { promise: Promise<never>; cancel: () => void } {
+  let timer: ReturnType<typeof setTimeout>;
+  const promise = new Promise<never>((_, reject) => {
+    timer = setTimeout(
+      () => reject(new Error(`layout did not finish within ${ms}ms`)),
+      ms,
+    );
+  });
+  return { promise, cancel: () => clearTimeout(timer) };
+}
+
+/**
  * Place `nodes` with elk and return them with `position` filled in. Edges are
  * only read, never modified; the returned array preserves the input order.
+ *
+ * Rejects if elk does not answer within [`LAYOUT_TIMEOUT_MS`].
  */
 export async function layout(
   nodes: SymbolFlowNode[],
@@ -143,7 +187,12 @@ export async function layout(
     })),
   };
 
-  const laid = await elk.layout(graph);
+  const limit = timeout(LAYOUT_TIMEOUT_MS);
+  const laid = await Promise.race([
+    elk.layout(graph),
+    workerFailed,
+    limit.promise,
+  ]).finally(limit.cancel);
   const placed = new Map(
     (laid.children ?? []).map((child) => [child.id, child]),
   );

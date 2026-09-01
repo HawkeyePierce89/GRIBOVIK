@@ -135,6 +135,16 @@ body {
   background: rgba(216, 163, 60, 0.14);
   border: 1px solid var(--modified);
   border-radius: 6px;
+  /* The banner has no controls and never goes away, so leaving it in the hit
+     path would cost the reviewer the Approve/Reject buttons of every card
+     `fitView` happens to place under it, for the whole session. The warning
+     list takes the pointer back so it stays selectable and scrollable. */
+  pointer-events: none;
+}
+
+.warnings strong,
+.warnings ul {
+  pointer-events: auto;
 }
 
 .warnings.error {
