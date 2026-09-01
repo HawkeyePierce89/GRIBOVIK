@@ -151,7 +151,7 @@ changes.
       `name: gribovik-${{ matrix.target }}` (artifact names must be unique per
       job under the v4+ backend), `path: dist/*`, and
       `if-no-files-found: error` so a silently empty archive fails the job.
-- [ ] Verify: `actionlint .github/workflows/release.yml` exits 0 — this catches
+- [x] Verify: `actionlint .github/workflows/release.yml` exits 0 — this catches
       an unknown runner label, a bad `needs.guard.outputs.version` reference, and
       any shellcheck complaint in the new `run:` bodies.
 - [ ] Verify: `bash -n` each new bash snippet, and sanity-check the tar
@@ -179,7 +179,7 @@ changes.
       with `env: GH_TOKEN: ${{ github.token }}` and `TAG: ${{ github.ref_name }}`.
       `gh` is preinstalled on `ubuntu-latest`, so no third-party action and no
       extra token are needed.
-- [ ] Verify: `actionlint .github/workflows/release.yml` exits 0.
+- [x] Verify: `actionlint .github/workflows/release.yml` exits 0.
 - [ ] Verify: `bash -n` the publish snippet; confirm by reading the file that
       the trigger→job graph is exactly `tag push → guard → 5 builds → release`
       and `dispatch → guard (label only) → 5 builds → no release`.
