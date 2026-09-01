@@ -4,8 +4,10 @@
 //! caller's body and a list of changed symbols, and no type information to
 //! match them with. Resolution is therefore proximity-based — a name is looked
 //! up in the caller's own file first, then in its directory, then in the whole
-//! graph — and a name that still matches several symbols yields one
-//! `ambiguous` edge per candidate rather than a guess.
+//! graph — and a name that still matches several symbols in the tier that
+//! answered yields one `ambiguous` edge per candidate rather than a guess. The
+//! whole-graph tier is the exception: it answers only a name unique across the
+//! graph, because a repository-wide tie on a bare name carries no signal.
 //!
 //! Only changed symbols are candidates: a call into untouched code is not part
 //! of the review and produces no edge.
@@ -109,6 +111,13 @@ fn coexisted(caller: &Callable, callee: &Callable) -> bool {
 /// The caller itself stays in the running so that a recursive call resolves
 /// locally instead of falling through to an unrelated same-named symbol; the
 /// self-edge is dropped afterwards.
+///
+/// The last tier is deliberately stricter than the first two: proximity is the
+/// only evidence there is, and a bare name shared by several symbols scattered
+/// across the repository — `new`, `join`, `len` — is evidence of nothing. A
+/// same-file or same-directory tie still names a handful of neighbours the
+/// reviewer can judge, so those fan out as `ambiguous`; a repository-wide tie
+/// draws no arrow at all rather than a dozen wrong ones.
 fn resolve(caller: &Callable, candidates: &[usize], callables: &[Callable]) -> Vec<usize> {
     let same_file: Vec<usize> = candidates
         .iter()
@@ -127,7 +136,10 @@ fn resolve(caller: &Callable, candidates: &[usize], callables: &[Callable]) -> V
     if !same_dir.is_empty() {
         return same_dir;
     }
-    candidates.to_vec()
+    match candidates {
+        [only] => vec![*only],
+        _ => Vec::new(),
+    }
 }
 
 /// Collapse repeated `(from, to)` pairs, keeping the first position and the
@@ -210,7 +222,7 @@ impl<'a> Analyzed<'a> {
             // The carved span, matching the lines the card shows: a type whose
             // range swallows its methods must not claim the calls their bodies
             // make, or it fans out to callees no line of its own diff mentions.
-            span: carve(symbol, &side.symbols),
+            span: carve(&side.symbols, position),
             src: src.unwrap_or_default(),
             analyzer: self.analyzer.as_ref(),
         })
@@ -354,21 +366,35 @@ fn beta() {}
         );
     }
 
-    /// Two equally distant candidates cannot be told apart without type
-    /// information, so both are drawn and marked as guesses.
+    /// Two candidates in the tier that answered cannot be told apart without
+    /// type information, so both are drawn and marked as guesses.
     #[test]
     fn an_undecidable_name_yields_one_ambiguous_edge_per_candidate() {
         assert_eq!(
             edges_of(&[
-                FileInput::added("src/x/a.rs", rust_helper("1")),
-                FileInput::added("src/y/b.rs", rust_helper("2")),
+                FileInput::added("src/app/util.rs", rust_helper("1")),
+                FileInput::added("src/app/other.rs", rust_helper("2")),
                 FileInput::added("src/app/main.rs", rust_caller()),
             ]),
             vec![
-                "src/app/main.rs::caller -> src/x/a.rs::helper (ambiguous)",
-                "src/app/main.rs::caller -> src/y/b.rs::helper (ambiguous)",
+                "src/app/main.rs::caller -> src/app/util.rs::helper (ambiguous)",
+                "src/app/main.rs::caller -> src/app/other.rs::helper (ambiguous)",
             ]
         );
+    }
+
+    /// The whole-graph tier answers a unique name only. Two same-named symbols
+    /// in unrelated directories is the shape `new`, `join` and `len` take in a
+    /// real repository, and drawing an arrow to each of them buries the edges
+    /// that mean something under a fan of guesses.
+    #[test]
+    fn a_name_shared_across_distant_directories_draws_no_edge() {
+        assert!(edges_of(&[
+            FileInput::added("src/x/a.rs", rust_helper("1")),
+            FileInput::added("src/y/b.rs", rust_helper("2")),
+            FileInput::added("src/app/main.rs", rust_caller()),
+        ])
+        .is_empty());
     }
 
     /// The graph only contains changed symbols; a call reaching into untouched

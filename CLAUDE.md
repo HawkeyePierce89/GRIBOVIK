@@ -103,7 +103,9 @@ what falls in their span, and in Swift and TypeScript — where a type's span
 contains its members' — a line goes to the *innermost* symbol holding it, so a
 method-body edit is the method's alone and the enclosing class is not asked for
 a second verdict on the same change. `diff::Span` is the carved span:
-`nodes::carve` subtracts every strictly-nested sibling range from each symbol's.
+`nodes::carve` subtracts every nested sibling range from each symbol's, taking
+the later position in the analyzer's source-order list as the inner one when a
+one-line declaration gives a type and its member the same range.
 `edges.rs` carves the same way, so the call sites a card draws arrows from are
 the call sites its diff shows.
 Whatever no symbol claims goes to the file card, decided **line by

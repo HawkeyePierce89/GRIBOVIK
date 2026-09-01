@@ -19,9 +19,12 @@ gribovik                     # review this branch against origin/master
    works out which symbols the diff actually touched.
 3. Classifies each touched symbol as **added**, **modified**, or **deleted**,
    and slices out just the diff lines belonging to it.
-4. Resolves calls between changed symbols into edges — `certain` when the
-   callee is unambiguous, `ambiguous` (drawn dashed) when several changed
-   symbols share the name.
+4. Resolves calls between changed symbols into edges, nearest first: the
+   caller's own file, then its directory, then the whole graph — `certain` when
+   the callee is unambiguous, `ambiguous` (drawn dashed) when several changed
+   symbols in the tier that answered share the name. A name shared across
+   distant directories draws nothing, since proximity is the only evidence
+   there is.
 5. Serves the result on `localhost` to a React Flow SPA laid out left-to-right
    with elkjs, and persists your review state under `.git/gribovik/`.
 

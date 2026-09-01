@@ -240,33 +240,44 @@ fn occurrences(symbols: &[Symbol]) -> (Occurrences<'_>, Vec<usize>) {
 /// worst and pure integer comparison — next to the parse that produced the
 /// symbols it does not register.
 fn spans(symbols: &[Symbol]) -> Vec<Span> {
-    symbols.iter().map(|s| carve(s, symbols)).collect()
+    (0..symbols.len()).map(|i| carve(symbols, i)).collect()
 }
 
-/// The span `symbol` claims among its `siblings` — every symbol declared inside
-/// it subtracted from its own range.
+/// The span the symbol at `index` claims among `symbols` — every symbol
+/// declared inside it subtracted from its own range.
 ///
 /// Shared with edge resolution so that the lines a card draws arrows from are
 /// the same lines it shows: a Swift or TypeScript type whose span contains its
 /// methods must not be credited with the calls their bodies make.
-pub fn carve(symbol: &Symbol, siblings: &[Symbol]) -> Span {
-    let outer = symbol.range();
-    let inner: Vec<LineRange> = siblings
+pub fn carve(symbols: &[Symbol], index: usize) -> Span {
+    let outer = symbols[index].range();
+    let inner: Vec<LineRange> = symbols
         .iter()
-        .map(Symbol::range)
-        .filter(|other| nests_within(*other, outer))
+        .enumerate()
+        .filter(|&(i, other)| nests_within((i, other.range()), (index, outer)))
+        .map(|(_, other)| other.range())
         .collect();
     Span::new(outer, inner)
 }
 
-/// Whether `inner` is a *strict* subrange of `outer`.
+/// Whether `inner` is declared inside `outer`, each given as its position in
+/// the analyzer's source-order symbol list paired with its line range.
 ///
-/// Strict matters: two symbols reported with identical spans are not nested,
-/// and treating them as such would leave both cards empty.
-fn nests_within(inner: LineRange, outer: LineRange) -> bool {
-    inner.start >= outer.start
-        && inner.end <= outer.end
-        && (inner.start > outer.start || inner.end < outer.end)
+/// Containment alone is not enough, because a declaration whose body opens and
+/// closes on its own line — `struct P { func f() {} }` — reports the same range
+/// for the type and its member, and a plain subrange test would leave the line
+/// on both cards. Analyzers walk the tree, so an enclosing symbol is always
+/// emitted before the symbols it contains; on a tie the later position is the
+/// inner one. Comparing positions also keeps a symbol from nesting within
+/// itself, which a `>=`/`<=` test on ranges alone would allow.
+fn nests_within(inner: (usize, LineRange), outer: (usize, LineRange)) -> bool {
+    let (inner_pos, inner_range) = inner;
+    let (outer_pos, outer_range) = outer;
+    inner_range.start >= outer_range.start
+        && inner_range.end <= outer_range.end
+        && (inner_range.start > outer_range.start
+            || inner_range.end < outer_range.end
+            || inner_pos > outer_pos)
 }
 
 /// Parse both sides with the analyzer the extension selects.
@@ -578,6 +589,37 @@ mod tests {
                 "modified",
                 "-3 +3"
             )]
+        );
+    }
+
+    /// A declaration written on one line reports the same range for the type
+    /// and its member. Containment alone cannot separate them, and the line
+    /// used to land on both cards — two verdicts on one edit, counted twice in
+    /// the progress panel.
+    #[test]
+    fn a_one_line_type_does_not_share_its_change_with_its_member() {
+        let file = FileInput::modified(
+            "web/a.ts",
+            "export class A { m() { return 1; } }\n",
+            "export class A { m() { return 2; } }\n",
+        );
+        assert_eq!(
+            outline(&[file]),
+            vec![row("web/a.ts::A.m", "method", "modified", "-1 +1")]
+        );
+    }
+
+    /// The same collision through the Swift analyzer.
+    #[test]
+    fn a_one_line_swift_struct_does_not_share_its_change_with_its_member() {
+        let file = FileInput::modified(
+            "app/a.swift",
+            "struct P { func f() -> Int { return 1 } }\n",
+            "struct P { func f() -> Int { return 2 } }\n",
+        );
+        assert_eq!(
+            outline(&[file]),
+            vec![row("app/a.swift::P.f", "method", "modified", "-1 +1")]
         );
     }
 

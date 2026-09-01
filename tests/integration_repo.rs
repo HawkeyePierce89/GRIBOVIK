@@ -354,18 +354,6 @@ fn analyzes_a_multi_language_change_end_to_end() {
                 "src/counter.rs::record",
                 Confidence::Certain
             ),
-            // `format_value` exists in two changed files, neither of them the
-            // caller's own directory: the reviewer gets both, marked unsure.
-            (
-                "src/counter.rs::record",
-                "src/fmt/short.rs::format_value",
-                Confidence::Ambiguous
-            ),
-            (
-                "src/counter.rs::record",
-                "src/text/long.rs::format_value",
-                Confidence::Ambiguous
-            ),
             (
                 "web/app.ts::render",
                 "web/app.ts::decorate",
@@ -373,6 +361,14 @@ fn analyzes_a_multi_language_change_end_to_end() {
             ),
         ]
     );
+    // `format_value` is declared in two changed files, neither of them the
+    // caller's own directory. The name alone cannot pick one, and the
+    // whole-graph tier answers unique names only, so `record` gets no arrow
+    // rather than one to each.
+    assert!(!snapshot
+        .edges
+        .iter()
+        .any(|edge| edge.to.ends_with("::format_value")));
 }
 
 #[test]
