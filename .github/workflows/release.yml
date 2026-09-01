@@ -21,7 +21,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          cargo_version=$(sed -n 's/^version = "\(.*\)"$/\1/p' Cargo.toml | head -1)
+          cargo_version=$(sed -n '/^version = /{s/^version = "\(.*\)"$/\1/p;q;}' Cargo.toml)
           if [ "$GITHUB_REF_TYPE" = "tag" ]; then
             version="${GITHUB_REF_NAME#v}"
             if [ "$version" != "$cargo_version" ]; then
@@ -68,7 +68,7 @@ jobs:
         env:
           TARGET: ${{ matrix.target }}
         run: |
-          host=$(rustc -vV | sed -n 's/^host: //p')
+          host=$(rustc -vV | sed -n 's/^host: //p' | tr -d '\r')
           if [ "$host" != "$TARGET" ]; then
             echo "::error::Host $host does not match expected target $TARGET"
             exit 1
@@ -94,7 +94,7 @@ jobs:
         run: |
           $env:NAME = "gribovik-$env:VERSION-$env:TARGET"
           New-Item -ItemType Directory -Force dist
-          Compress-Archive -Path target/release/gribovik.exe -DestinationPath "dist/$env:NAME.zip"
+          Compress-Archive -Path target/release/gribovik.exe -DestinationPath "dist/${env:NAME}.zip"
       - uses: actions/upload-artifact@v7
         with:
           name: gribovik-${{ matrix.target }}
