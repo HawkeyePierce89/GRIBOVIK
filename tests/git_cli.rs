@@ -190,28 +190,6 @@ fn an_explicit_base_resolves_to_the_merge_base() {
     );
 }
 
-/// The label is what review state is filed under, so it has to be the name —
-/// a sha would file every rebase under a new file.
-#[test]
-fn the_base_label_is_the_name_asked_for_not_the_commit_it_resolves_to() {
-    let (dir, repo) = seeded_repo();
-    let _remote = push_to_new_origin(dir.path(), "master");
-    write(dir.path(), "src/lib.rs", "fn one() { two(); }\n");
-    commit(dir.path(), "work");
-
-    assert_eq!(repo.base_label(Some("master")).unwrap(), "master");
-    assert_eq!(repo.base_label(None).unwrap(), "origin/master");
-}
-
-#[test]
-fn an_unknown_base_label_is_reported_by_name() {
-    let (_dir, repo) = seeded_repo();
-
-    let err = repo.base_label(Some("no-such-ref")).unwrap_err();
-
-    assert_eq!(err.to_string(), "unknown revision: no-such-ref");
-}
-
 #[test]
 fn an_unknown_base_revision_is_reported_by_name() {
     let (_dir, repo) = seeded_repo();
@@ -353,48 +331,8 @@ fn a_non_utf8_blob_is_classified_rather_than_erroring() {
     );
 }
 
-#[test]
-fn the_git_directory_is_the_one_git_reports() {
-    let (dir, repo) = seeded_repo();
-
-    let git_dir = repo.git_dir().unwrap();
-
-    assert!(git_dir.is_dir(), "not a directory: {}", git_dir.display());
-    assert!(git_dir.is_absolute(), "not absolute: {}", git_dir.display());
-    assert_eq!(
-        git_dir.canonicalize().unwrap(),
-        dir.path().join(".git").canonicalize().unwrap()
-    );
-}
-
-/// In a linked worktree `.git` is a *file* pointing at the real directory, so
-/// anything that builds `<root>/.git` by hand cannot write review state there.
-#[test]
-fn a_linked_worktree_resolves_to_the_main_git_directory() {
-    let (dir, _) = seeded_repo();
-    let linked = dir.path().join("wt");
-    let status = Command::new("git")
-        .current_dir(dir.path())
-        .args(["worktree", "add", "-b", "side"])
-        .arg(&linked)
-        .output()
-        .unwrap();
-    assert!(status.status.success(), "git worktree add failed");
-    assert!(linked.join(".git").is_file(), "expected a .git file");
-
-    let git_dir = Repo::discover(&linked).unwrap().git_dir().unwrap();
-
-    assert!(git_dir.is_dir(), "not a directory: {}", git_dir.display());
-    assert_eq!(
-        git_dir.canonicalize().unwrap(),
-        dir.path().join(".git").canonicalize().unwrap()
-    );
-}
-
-/// Review state is filed under `<merge-base>..<head>`, so the head name is the
-/// only thing that tells two branches cut from the same commit apart. Left as
-/// the literal `HEAD` they share a file, and one branch's verdicts land
-/// pre-applied on the other's code.
+/// The bare `HEAD` says nothing in the header the browser shows, so it is
+/// expanded to the branch it is on.
 #[test]
 fn the_default_head_is_labelled_with_the_branch_it_is_on() {
     let (dir, repo) = seeded_repo();

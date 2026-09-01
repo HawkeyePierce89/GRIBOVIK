@@ -4,9 +4,8 @@ GRIBOVIK explores the project’s sprawling mycelial network.
 
 It turns a git range into an **interactive diff graph**: every changed
 function, method, or type becomes a card carrying its own line diff, and the
-calls between those cards become edges. You review the graph in a browser —
-approve, reject, or leave pending, and leave comments — and GRIBOVIK remembers
-your marks between runs.
+calls between those cards become edges. You explore the graph in a browser
+instead of scrolling a flat diff.
 
 ```
 gribovik                     # review this branch against origin/master
@@ -26,7 +25,7 @@ gribovik                     # review this branch against origin/master
    distant directories draws nothing, since proximity is the only evidence
    there is.
 5. Serves the result on `localhost` to a React Flow SPA laid out left-to-right
-   with elkjs, and persists your review state under `.git/gribovik/`.
+   with elkjs.
 
 Changed lines that fall outside every symbol — import blocks, top-level
 constants, `impl` scaffolding — are collected into a synthetic **file-level**
@@ -59,16 +58,13 @@ altogether and named in the same banner.
 
 ## In the browser
 
-The left panel counts the cards — changed symbols plus the file-level
-catch-alls — and how many are approved, rejected, or still pending. Clicking a counter highlights exactly those cards; clicking
-it again clears the highlight. **Approved cards fade to 45% opacity** — that is
-deliberate, not a rendering glitch, so the canvas visibly empties as you work.
+The left panel names the review and counts the cards — changed symbols plus
+the file-level catch-alls.
 
-Each card carries its file path, a change badge, its slice of the diff, the
-three verdict buttons, and a comment box. The graph pans and zooms, with a
-minimap and controls in the corners; a dashed edge is one the call resolver was
-not sure about. Warnings from the analysis sit in a banner at the top, and a
-failed save shows a red banner at the bottom rather than silently losing marks.
+Each card carries its file path, a change badge, and its slice of the diff.
+The graph pans and zooms, with a minimap and controls in the corners; a dashed
+edge is one the call resolver was not sure about. Warnings from the analysis
+sit in a banner at the top.
 
 ## Build
 
@@ -125,52 +121,6 @@ contains no reviewable changes it says so and exits 0 without binding a port.
 Any failure — not a git repository, no `origin/master` or `origin/main`, an
 unknown revision, a port already in use — is reported as a single line on
 stderr with exit code 1.
-
-## Where review state lives
-
-Statuses and comments are written to:
-
-```
-<git-dir>/gribovik/<base>..<head>.json
-```
-
-`<git-dir>` is whatever `git rev-parse --git-common-dir` reports — usually
-`<repo>/.git`, but a linked worktree or a submodule keeps its data elsewhere,
-and every worktree of a repository shares one review.
-
-Both halves are **names**, not commits: the base is the revision you typed (or
-the `origin/master` / `origin/main` that was picked for you), and the head is
-the revision you typed, except that a bare `HEAD` — the default — is expanded
-to the branch you are on, or to the short commit if the checkout is detached.
-`gribovik origin/master` on `feature/x` therefore writes
-`origin%2Fmaster..feature%2Fx.json`; anything outside `[A-Za-z0-9._-]` is
-percent-encoded, so two branch names can never land on one file.
-
-Naming it after the merge base instead would have been the obvious choice and
-is the wrong one: the merge base moves the moment you rebase or merge the base
-branch in, and a four-hundred-card review would be orphaned by a routine
-`git rebase`. Names do not move, so the review is found again — and what keeps
-that from replaying an approval over rewritten code is the fingerprint stored
-with each verdict. On every start, a card whose own diff still hashes the same
-keeps its status; a card whose code changed comes back as pending, keeping its
-comments.
-
-The file is JSON keyed by node id (`<file>::<qualified_name>`), written
-atomically, and stable across saves so it diffs cleanly if you ever open it.
-Because it lives inside the git directory it is never committed, is not shared
-with anyone else, and disappears with the clone. A missing file is the normal
-first run. An unreadable one — hand-edited, truncated by a power loss — is
-moved aside to `<name>.corrupt` and reported in the warnings banner, so the
-session starts empty without the first click overwriting whatever was still in
-there.
-
-Re-running GRIBOVIK on the same `base..head` picks the marks back up — except
-for the cards whose code changed in the meantime. Each entry records a digest of
-the diff it was decided on, and a card whose diff no longer matches opens as
-**pending** again, because an approval of the previous version is not an
-approval of this one. Comments are kept either way; they are your words, not a
-verdict. A state file written before this digest existed carries none, and is
-read the safe way round: every status in it comes back as pending.
 
 ## Development
 

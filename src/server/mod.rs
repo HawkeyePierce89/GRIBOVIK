@@ -1,19 +1,16 @@
 //! The local HTTP server the reviewer's browser talks to.
 //!
 //! The graph is computed once, before the server starts, and never changes
-//! while it runs — only the review state does. So the snapshot is shared
-//! immutably and the state sits behind a mutex, written through to disk on
-//! every mutation. A reviewer who kills the process mid-session loses nothing.
+//! while it runs, so the server is read-only: the snapshot goes out, nothing
+//! comes back in.
 //!
-//! The API is deliberately tiny: read the graph, read the state, replace the
-//! state. Replacing the whole object rather than patching single nodes keeps
-//! the client free of merge logic, and the payload is a few kilobytes at worst.
+//! The API is deliberately tiny: read the graph. Everything else is the SPA's
+//! static assets.
 
 pub mod assets;
 
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
-use std::path::PathBuf;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
 use anyhow::{Context, Result};
 use axum::extract::{Path as AxumPath, State};
@@ -23,7 +20,6 @@ use axum::routing::get;
 use axum::{Json, Router};
 
 use crate::core::GraphSnapshot;
-use crate::review::{self, ReviewState};
 use crate::server::assets::Assets;
 
 /// The address the server binds to.
@@ -37,40 +33,14 @@ const HOST: IpAddr = IpAddr::V4(Ipv4Addr::LOCALHOST);
 pub struct AppState {
     /// The analysis result, fixed for the lifetime of the process.
     snapshot: GraphSnapshot,
-    /// The reviewer's verdicts, mutated by `POST /api/state`.
-    state: Mutex<ReviewState>,
-    /// Where those verdicts are persisted.
-    state_path: PathBuf,
     /// Where the SPA's files come from.
     assets: Assets,
 }
 
 impl AppState {
-    /// The review state, whatever a previous panic did to the mutex.
-    ///
-    /// The guarded value is a plain map with no invariant a half-finished write
-    /// could break, so recovering from poisoning is strictly better than
-    /// turning one panicking request into a permanently broken endpoint.
-    fn lock(&self) -> std::sync::MutexGuard<'_, ReviewState> {
-        self.state
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner())
-    }
-
-    /// Assemble the shared state from an analysis result and a place to keep
-    /// the review in.
-    pub fn new(
-        snapshot: GraphSnapshot,
-        state: ReviewState,
-        state_path: PathBuf,
-        assets: Assets,
-    ) -> Self {
-        Self {
-            snapshot,
-            state: Mutex::new(state),
-            state_path,
-            assets,
-        }
+    /// Assemble the shared state from an analysis result and an asset source.
+    pub fn new(snapshot: GraphSnapshot, assets: Assets) -> Self {
+        Self { snapshot, assets }
     }
 }
 
@@ -79,7 +49,6 @@ impl AppState {
 pub fn router(state: Arc<AppState>) -> Router {
     Router::new()
         .route("/api/graph", get(get_graph))
-        .route("/api/state", get(get_state).post(post_state))
         .route("/", get(index))
         .route("/{*path}", get(asset))
         .layer(axum::middleware::from_fn(reject_foreign_host))
@@ -92,8 +61,8 @@ pub fn router(state: Arc<AppState>) -> Router {
 /// The `Host` check turns away an attacker's domain that resolves to loopback,
 /// but a page on any origin may still put `http://127.0.0.1:<port>/` in an
 /// iframe — the browser sends a loopback `Host` for that, so it passes. The
-/// framed page cannot be read cross-origin, but its Approve and Reject buttons
-/// can be clicked through, which is enough to falsify a review.
+/// framed page cannot be read cross-origin, but keeping it unframeable costs
+/// nothing and closes the door for good.
 async fn deny_framing(request: axum::extract::Request, next: axum::middleware::Next) -> Response {
     let mut response = next.run(request).await;
     response.headers_mut().insert(
@@ -187,48 +156,6 @@ async fn get_graph(State(state): State<Arc<AppState>>) -> Json<GraphSnapshot> {
     Json(state.snapshot.clone())
 }
 
-/// `GET /api/state` — every verdict recorded so far.
-async fn get_state(State(state): State<Arc<AppState>>) -> Json<ReviewState> {
-    Json(state.lock().clone())
-}
-
-/// `POST /api/state` — replace the whole state and write it to disk.
-///
-/// The response only reports whether the write succeeded; the client already
-/// knows what it sent, so there is nothing to echo back.
-async fn post_state(
-    State(state): State<Arc<AppState>>,
-    Json(incoming): Json<ReviewState>,
-) -> Response {
-    // The write happens under the lock so that two overlapping posts land on
-    // disk in the order they took it. Dropping the guard first would let an
-    // older state win the race and outlive the newer one the browser is showing.
-    let mut guard = state.lock();
-    let mut incoming = incoming;
-    // Stamped here, against the snapshot this process is serving: a verdict
-    // arriving now is a verdict on the code the browser is showing, and
-    // recording which code that was is what stops the next run from replaying
-    // it over a rewritten symbol. The client never computes or reads the
-    // field — it only carries it back and forth.
-    review::stamp(&mut incoming, &state.snapshot);
-
-    // Disk first, memory second. A 500 tells the browser the verdict is not
-    // durable, and `GET /api/state` has to say the same thing: committing the
-    // change here anyway would serve the unsaved state back on the next reload,
-    // clearing the banner and hiding a loss that only surfaces after exit.
-    match review::save(&state.state_path, &incoming) {
-        Ok(()) => {
-            *guard = incoming;
-            StatusCode::NO_CONTENT.into_response()
-        }
-        Err(err) => (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            format!("could not save review state: {err:#}"),
-        )
-            .into_response(),
-    }
-}
-
 /// `GET /` — the SPA shell.
 async fn index(State(state): State<Arc<AppState>>) -> Response {
     state.assets.respond("/")
@@ -243,11 +170,9 @@ async fn asset(State(state): State<Arc<AppState>>, AxumPath(path): AxumPath<Stri
 mod tests {
     use super::*;
     use crate::core::snapshot::{ChangeKind, Confidence, DiffLine, DiffTag, Edge, Meta, Node};
-    use crate::review::{Comment, NodeReview, Status};
     use axum::body::Body;
     use axum::http::{header, Request};
     use http_body_util::BodyExt;
-    use tempfile::TempDir;
     use tower::ServiceExt;
 
     fn snapshot() -> GraphSnapshot {
@@ -280,42 +205,8 @@ mod tests {
         }
     }
 
-    fn review() -> ReviewState {
-        let mut state = ReviewState::new();
-        state.insert(
-            "src/a.rs::alpha".to_string(),
-            NodeReview {
-                status: Status::Approved,
-                comments: vec![Comment {
-                    text: "fine".to_string(),
-                    created_at: "2026-09-01T10:00:00.000Z".to_string(),
-                }],
-                fingerprint: None,
-            },
-        );
-        state
-    }
-
-    /// `review()` as the server keeps it: `POST /api/state` stamps every entry
-    /// with the fingerprint of the node it describes, so what comes back out
-    /// carries one even though the client never sent it.
-    fn stamped() -> ReviewState {
-        let mut state = review();
-        review::stamp(&mut state, &snapshot());
-        state
-    }
-
-    /// A router over a temp state file, plus the directory keeping it alive.
-    fn app(state: ReviewState) -> (TempDir, PathBuf, Router) {
-        let dir = TempDir::new().unwrap();
-        let path = review::state_path(dir.path(), "abc123", "HEAD");
-        let app_state = Arc::new(AppState::new(
-            snapshot(),
-            state,
-            path.clone(),
-            Assets::Embedded,
-        ));
-        (dir, path, router(app_state))
+    fn app() -> Router {
+        router(Arc::new(AppState::new(snapshot(), Assets::Embedded)))
     }
 
     async fn get(app: &Router, uri: &str) -> Response {
@@ -325,21 +216,6 @@ mod tests {
                     .uri(uri)
                     .header(header::HOST, "127.0.0.1:7391")
                     .body(Body::empty())
-                    .unwrap(),
-            )
-            .await
-            .unwrap()
-    }
-
-    async fn post_json(app: &Router, uri: &str, body: String) -> Response {
-        app.clone()
-            .oneshot(
-                Request::builder()
-                    .method("POST")
-                    .uri(uri)
-                    .header(header::HOST, "127.0.0.1:7391")
-                    .header(header::CONTENT_TYPE, "application/json")
-                    .body(Body::from(body))
                     .unwrap(),
             )
             .await
@@ -364,9 +240,7 @@ mod tests {
     /// browser is concerned, but addressed to the attacker's hostname.
     #[tokio::test]
     async fn a_request_for_a_foreign_host_is_refused() {
-        let (_dir, _path, app) = app(ReviewState::new());
-
-        let response = app
+        let response = app()
             .oneshot(
                 Request::builder()
                     .uri("/api/graph")
@@ -388,9 +262,7 @@ mod tests {
             "[::1]:7391",
             "localhost",
         ] {
-            let (_dir, _path, app) = app(ReviewState::new());
-
-            let response = app
+            let response = app()
                 .oneshot(
                     Request::builder()
                         .uri("/api/graph")
@@ -406,10 +278,10 @@ mod tests {
     }
 
     /// A loopback `Host` is what a browser sends for an iframe pointed at this
-    /// server, so the `Host` check cannot see clickjacking; the headers can.
+    /// server, so the `Host` check cannot see framing; the headers can.
     #[tokio::test]
     async fn responses_refuse_to_be_framed() {
-        let (_dir, _path, app) = app(ReviewState::new());
+        let app = app();
 
         let response = get(&app, "/").await;
 
@@ -425,7 +297,7 @@ mod tests {
 
     #[tokio::test]
     async fn api_graph_returns_the_snapshot() {
-        let (_dir, _path, app) = app(ReviewState::new());
+        let app = app();
 
         let response = get(&app, "/api/graph").await;
 
@@ -434,121 +306,8 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn api_state_starts_from_the_loaded_state() {
-        let (_dir, _path, app) = app(review());
-
-        let response = get(&app, "/api/state").await;
-
-        assert_eq!(response.status(), StatusCode::OK);
-        assert_eq!(body_json::<ReviewState>(response).await, review());
-    }
-
-    #[tokio::test]
-    async fn posting_state_then_getting_it_round_trips() {
-        let (_dir, _path, app) = app(ReviewState::new());
-        let payload = serde_json::to_string(&review()).unwrap();
-
-        let posted = post_json(&app, "/api/state", payload).await;
-        assert_eq!(posted.status(), StatusCode::NO_CONTENT);
-
-        let fetched = get(&app, "/api/state").await;
-        assert_eq!(body_json::<ReviewState>(fetched).await, stamped());
-    }
-
-    #[tokio::test]
-    async fn posting_state_writes_the_file() {
-        let (_dir, path, app) = app(ReviewState::new());
-        assert!(!path.exists());
-
-        post_json(
-            &app,
-            "/api/state",
-            serde_json::to_string(&review()).unwrap(),
-        )
-        .await;
-
-        assert_eq!(review::load(&path).0, stamped());
-    }
-
-    /// A 500 says the verdict is not on disk, and `GET /api/state` has to keep
-    /// saying so. Committing the post in memory anyway would serve it back on
-    /// the next reload, clear the browser's banner, and turn a loss the reviewer
-    /// was told about into one they only discover after the process exits.
-    #[tokio::test]
-    async fn a_state_that_could_not_be_written_is_not_kept_in_memory() {
-        let dir = TempDir::new().unwrap();
-        // A directory where the state file belongs: the rename cannot land.
-        let path = review::state_path(dir.path(), "abc123", "HEAD");
-        std::fs::create_dir_all(&path).unwrap();
-        let app = router(Arc::new(AppState::new(
-            snapshot(),
-            ReviewState::new(),
-            path,
-            Assets::Embedded,
-        )));
-
-        let posted = post_json(
-            &app,
-            "/api/state",
-            serde_json::to_string(&review()).unwrap(),
-        )
-        .await;
-        assert_eq!(posted.status(), StatusCode::INTERNAL_SERVER_ERROR);
-
-        let fetched = get(&app, "/api/state").await;
-        assert_eq!(body_json::<ReviewState>(fetched).await, ReviewState::new());
-    }
-
-    /// The fingerprint is what stops the next run from replaying an approval
-    /// over a symbol that changed since, and the client never computes it.
-    #[tokio::test]
-    async fn posting_state_stamps_each_entry_with_its_nodes_fingerprint() {
-        let (_dir, _path, app) = app(ReviewState::new());
-
-        post_json(
-            &app,
-            "/api/state",
-            serde_json::to_string(&review()).unwrap(),
-        )
-        .await;
-
-        let stored = body_json::<ReviewState>(get(&app, "/api/state").await).await;
-        assert_eq!(
-            stored["src/a.rs::alpha"].fingerprint.as_deref(),
-            Some(review::fingerprint(&snapshot().nodes[0]).as_str())
-        );
-    }
-
-    #[tokio::test]
-    async fn posting_state_replaces_rather_than_merges() {
-        let (_dir, path, app) = app(review());
-
-        post_json(&app, "/api/state", "{}".to_string()).await;
-
-        assert_eq!(
-            body_json::<ReviewState>(get(&app, "/api/state").await).await,
-            ReviewState::new()
-        );
-        assert_eq!(review::load(&path).0, ReviewState::new());
-    }
-
-    #[tokio::test]
-    async fn malformed_state_is_rejected_without_touching_the_stored_state() {
-        let (_dir, path, app) = app(review());
-
-        let response = post_json(&app, "/api/state", "{\"a\": 5}".to_string()).await;
-
-        assert_eq!(response.status(), StatusCode::UNPROCESSABLE_ENTITY);
-        assert!(!path.exists(), "a rejected post must not write the file");
-        assert_eq!(
-            body_json::<ReviewState>(get(&app, "/api/state").await).await,
-            review()
-        );
-    }
-
-    #[tokio::test]
     async fn the_root_serves_the_spa_shell() {
-        let (_dir, _path, app) = app(ReviewState::new());
+        let app = app();
 
         let response = get(&app, "/").await;
 
@@ -562,7 +321,7 @@ mod tests {
 
     #[tokio::test]
     async fn an_unknown_path_falls_back_to_index_html() {
-        let (_dir, _path, app) = app(ReviewState::new());
+        let app = app();
 
         let index = body_bytes(get(&app, "/").await).await;
         let response = get(&app, "/no/such/route").await;
@@ -573,7 +332,7 @@ mod tests {
 
     #[tokio::test]
     async fn a_real_asset_is_served_with_its_own_content_type() {
-        let (_dir, _path, app) = app(ReviewState::new());
+        let app = app();
         let index = String::from_utf8(body_bytes(get(&app, "/").await).await).unwrap();
         let script = index
             .split("src=\"")

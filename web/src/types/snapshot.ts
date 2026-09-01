@@ -69,34 +69,3 @@ export type Confidence = "certain" | "ambiguous";
 
 /** Which side of the diff a line belongs to. */
 export type DiffTag = "add" | "del" | "context";
-
-/**
- * Node id → the reviewer's verdict. Mirrors `ReviewState` in `src/review.rs`;
- * a node with no entry counts as `pending`.
- */
-export type ReviewState = Record<string, NodeReview>;
-
-/** Everything the reviewer recorded about one node. */
-export interface NodeReview {
-  status: Status;
-  comments: Comment[];
-  /**
-   * Digest of the diff the verdict was recorded against, owned by the server:
-   * it stamps every entry on `POST /api/state` and drops the statuses whose
-   * digest no longer matches when the next run loads the file. The client
-   * carries the field back and forth without reading it, so the two sides
-   * never have to agree on a hash — which is why it is optional here and
-   * absent on an entry the client has just created.
-   */
-  fingerprint?: string;
-}
-
-/** Where a node stands in the review. */
-export type Status = "approved" | "rejected" | "pending";
-
-/** One free-text note attached to a node. */
-export interface Comment {
-  text: string;
-  /** ISO-8601, stamped client-side; the backend treats it as opaque. */
-  created_at: string;
-}

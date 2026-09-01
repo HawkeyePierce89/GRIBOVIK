@@ -63,10 +63,8 @@ impl Analysis {
 /// rather than what the base branch moved on to. `head` defaults to `HEAD`.
 ///
 /// The reported head is [`Repo::head_label`] of that revision rather than the
-/// literal string: review state is filed under this name, and the bare `HEAD`
-/// names every branch cut from the same base commit at once. A branch name
-/// discriminates and still stays stable across new commits where a sha would
-/// not.
+/// literal string: `HEAD` says nothing in the header the browser shows, while
+/// the branch it is on names the work under review.
 pub fn analyze(repo: &Repo, base: Option<&str>, head: Option<&str>) -> Result<Analysis> {
     let head = head.unwrap_or(DEFAULT_HEAD);
     let base = repo.resolve_base(base, head)?;

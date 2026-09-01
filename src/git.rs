@@ -71,29 +71,6 @@ impl Repo {
         &self.root
     }
 
-    /// The directory git keeps its own data in — where review state belongs.
-    ///
-    /// This is *not* always `<root>/.git`: in a linked worktree or a submodule
-    /// that name is a file pointing elsewhere. Asking git for the common dir
-    /// also means every worktree of a repository shares one review, which is
-    /// what a reviewer expects from a state keyed on a revision range.
-    pub fn git_dir(&self) -> Result<PathBuf> {
-        let out = self.git(&["rev-parse", "--git-common-dir"])?;
-        if !out.status.success() {
-            bail!(
-                "could not locate the git directory: {}",
-                stderr_string(&out)
-            );
-        }
-        let dir = PathBuf::from(stdout_string(&out)?.trim());
-        // `--git-common-dir` answers relative to the worktree root when it can.
-        Ok(if dir.is_absolute() {
-            dir
-        } else {
-            self.root.join(dir)
-        })
-    }
-
     /// Whether `rev` names a commit in this repository.
     pub fn rev_exists(&self, rev: &str) -> bool {
         let spec = format!("{rev}^{{commit}}");
@@ -104,15 +81,10 @@ impl Repo {
 
     /// A name for `rev` that tells two branches apart.
     ///
-    /// Review state is filed under `<base>..<head>`, and `base` is a merge
-    /// base: two branches cut from the same commit share it. Left as written,
-    /// the default `HEAD` makes them share the whole file name too, so one
-    /// branch's verdicts show up pre-applied to the other's code and the first
-    /// click there overwrites them. Expanding `HEAD` to the branch it is on
-    /// discriminates without giving up the stability a branch name has over a
-    /// sha — a new commit does not orphan the review. A detached `HEAD` has no
-    /// branch to name, so it falls back to the commit it points at, which is
-    /// exactly as stable as the checkout itself.
+    /// The bare `HEAD` names whatever is checked out, which reads as nothing in
+    /// the header the browser shows. Expanding it to the branch it is on names
+    /// the work under review; a detached `HEAD` has no branch to name, so it
+    /// falls back to the commit it points at.
     ///
     /// Any other revision is already a name the reviewer chose and is returned
     /// untouched.
@@ -141,16 +113,7 @@ impl Repo {
 
     /// The revision the base was *named* by: the explicit argument, or
     /// whichever of `origin/master` / `origin/main` exists.
-    ///
-    /// This is the branch-side half of [`resolve_base`](Self::resolve_base),
-    /// split out because review state is filed under it. The merge base is a
-    /// commit id, and it moves the moment the branch is rebased or master is
-    /// merged in — filing under it would orphan a review of four hundred cards
-    /// on a routine `git rebase`, which is exactly what the per-node
-    /// fingerprints exist to avoid. The name does not move, so the saved state
-    /// is found again and `review::reconcile` re-opens only the cards whose
-    /// own text actually changed.
-    pub fn base_label(&self, explicit: Option<&str>) -> Result<String> {
+    fn base_name(&self, explicit: Option<&str>) -> Result<String> {
         match explicit {
             Some(rev) => {
                 if !self.rev_exists(rev) {
@@ -181,7 +144,7 @@ impl Repo {
         if !self.rev_exists(head) {
             bail!("unknown revision: {head}");
         }
-        let base = self.base_label(explicit)?;
+        let base = self.base_name(explicit)?;
         self.merge_base(&base, head)
     }
 

@@ -31,7 +31,7 @@ function chain(): GraphSnapshot {
  *
  * The mix is the point. Uniform singletons are packed into tidy columns by any
  * spacing at all; it is components of unequal height and width, laid out beside
- * each other, that a spacing-based headroom fails to keep apart.
+ * each other, that break a careless height estimate.
  */
 function scattered(count: number): GraphSnapshot {
   const snapshot = chain();
@@ -50,9 +50,7 @@ function scattered(count: number): GraphSnapshot {
   }));
   snapshot.edges = [];
   // One large many-layered component alongside singletons: the layers are
-  // where `elk.spacing.nodeNode` governs, the leftovers are packed around it,
-  // and it is the two together that a spacing-based headroom fails to keep
-  // apart.
+  // where `elk.spacing.nodeNode` governs, the leftovers are packed around it.
   for (let i = 0; i < count; i += 1) {
     if (i % 3 === 0) continue;
     snapshot.edges.push({
@@ -85,8 +83,7 @@ function overlapping(
         a.position.x + NODE_WIDTH <= b.position.x ||
         b.position.x + NODE_WIDTH <= a.position.x;
       if (apart) continue;
-      const [top, bottom] =
-        a.position.y < b.position.y ? [a, b] : [b, a];
+      const [top, bottom] = a.position.y < b.position.y ? [a, b] : [b, a];
       if (bottom.position.y < top.position.y + heightOf(top)) {
         out.push(`${top.id} over ${bottom.id}`);
       }
@@ -142,8 +139,8 @@ describe("layout", () => {
 
   it("stacks cards without overlapping, whatever their diffs", async () => {
     // Enough cards that elk has to pack them into columns: two of them are
-    // placed clear of each other by any spacing at all, which is what let a
-    // broken headroom pass unnoticed.
+    // placed clear of each other by any spacing at all, which is what lets a
+    // broken height estimate pass unnoticed.
     const { nodes, edges } = toFlow(scattered(300));
 
     const placed = await layout(nodes, edges);
@@ -151,95 +148,6 @@ describe("layout", () => {
     // Each card's box has to clear the box above it. A fixed height for every
     // card is exactly what breaks this.
     expect(overlapping(placed, (node) => nodeHeight(node))).toEqual([]);
-  });
-
-  it("grows a card's height with the comments already saved on it", async () => {
-    const snapshot = chain();
-    snapshot.edges = [];
-    const { nodes, edges } = toFlow(snapshot);
-    const commented = {
-      "a::caller": {
-        status: "pending" as const,
-        comments: Array.from({ length: 3 }, () => ({
-          text: "why this?",
-          created_at: "2026-09-01T00:00:00Z",
-        })),
-      },
-    };
-
-    expect(nodeHeight(nodes[0]!, commented)).toBeGreaterThan(
-      nodeHeight(nodes[0]!),
-    );
-
-    // Reopening a review must not stack a commented card into its neighbour:
-    // laying out with an empty state is exactly what does that.
-    const placed = await layout(nodes, edges, commented);
-    expect(overlapping(placed, (node) => nodeHeight(node, commented))).toEqual(
-      [],
-    );
-  });
-
-  it("leaves room below a card for comments added after layout", async () => {
-    const { nodes, edges } = toFlow(scattered(300));
-
-    // Laid out with no comments at all — the first-run case.
-    const placed = await layout(nodes, edges);
-
-    // Then the reviewer fills both cards with comments, past the point where
-    // the list starts scrolling. Positions do not move, so the gap left below
-    // each card has to absorb every pixel that card can still grow by.
-    const full = Object.fromEntries(
-      nodes.map((node) => [
-        node.id,
-        {
-          status: "pending" as const,
-          comments: Array.from({ length: 20 }, () => ({
-            text: "why this?",
-            created_at: "2026-09-01T00:00:00Z",
-          })),
-        },
-      ]),
-    );
-    expect(overlapping(placed, (node) => nodeHeight(node, full))).toEqual([]);
-  });
-
-  it("leaves the same room between cards that share a caller", async () => {
-    // Two callees of one caller sit in the same layer of one component, where
-    // a different elk spacing governs the gap than between the disconnected
-    // components above. Both have to carry the headroom.
-    const snapshot = chain();
-    snapshot.nodes.push({
-      ...snapshot.nodes[1]!,
-      id: "a::other",
-      name: "a::other",
-    });
-    snapshot.edges.push({
-      from: "a::caller",
-      to: "a::other",
-      confidence: "certain",
-    });
-    const { nodes, edges } = toFlow(snapshot);
-
-    const placed = await layout(nodes, edges);
-
-    const full = Object.fromEntries(
-      nodes.map((node) => [
-        node.id,
-        {
-          status: "pending" as const,
-          comments: Array.from({ length: 20 }, () => ({
-            text: "why this?",
-            created_at: "2026-09-01T00:00:00Z",
-          })),
-        },
-      ]),
-    );
-    const callees = placed
-      .filter((node) => node.id !== "a::caller")
-      .sort((a, b) => a.position.y - b.position.y);
-    expect(callees[1]!.position.y).toBeGreaterThanOrEqual(
-      callees[0]!.position.y + nodeHeight(callees[0]!, full),
-    );
   });
 
   it("returns nothing for an empty graph", async () => {
@@ -270,25 +178,6 @@ describe("gridLayout", () => {
     expect(placed[1]!.position.x).toBe(placed[0]!.position.x);
     expect(placed[1]!.position.y).toBeGreaterThanOrEqual(
       placed[0]!.position.y + nodeHeight(nodes[0]!),
-    );
-  });
-
-  it("leaves the same room for later comments as elk does", () => {
-    const { nodes } = toFlow(chain());
-
-    const placed = gridLayout(nodes);
-
-    const full = {
-      "a::caller": {
-        status: "pending" as const,
-        comments: Array.from({ length: 20 }, () => ({
-          text: "why this?",
-          created_at: "2026-09-01T00:00:00Z",
-        })),
-      },
-    };
-    expect(placed[1]!.position.y).toBeGreaterThanOrEqual(
-      placed[0]!.position.y + nodeHeight(nodes[0]!, full),
     );
   });
 });

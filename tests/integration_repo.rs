@@ -9,7 +9,6 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-use gribovik::cli::{prepare, Args, Session};
 use gribovik::core::{ChangeKind, Confidence, DiffTag, GraphSnapshot, Node};
 use gribovik::git::Repo;
 use gribovik::pipeline::{analyze, Analysis};
@@ -211,13 +210,6 @@ fn fixture_repo(dir: &Path) -> String {
     write_head(dir);
     commit(dir, "feature");
     base
-}
-
-/// Where the review state for a snapshot would be written, keyed the way
-/// `cli::prepare` keys it: the *name* the base was asked for, never
-/// `meta.base`, which is the merge base and moves under a rebase.
-fn state_path(dir: &Path, base_label: &str, meta: &gribovik::core::Meta) -> PathBuf {
-    gribovik::review::state_path(dir.join(".git"), base_label, &meta.head)
 }
 
 fn expect_graph(analysis: Analysis) -> GraphSnapshot {
@@ -478,10 +470,8 @@ fn an_explicit_head_revision_is_reported_as_written() {
     assert!(!snapshot.nodes.is_empty());
 }
 
-/// Two branches cut from the same commit share a merge base, so the head is
-/// the only part of the state file name that can tell them apart. Reported as
-/// the literal `HEAD` they collide, and one branch's verdicts show up already
-/// applied to the other's code.
+/// The bare `HEAD` says nothing in the header the browser shows, so the head
+/// is reported as the branch it is on.
 #[test]
 fn the_default_head_is_reported_as_the_branch_it_is_on() {
     let tmp = TempDir::new().unwrap();
@@ -497,134 +487,6 @@ fn the_default_head_is_reported_as_the_branch_it_is_on() {
     assert_eq!(a.meta.head, "feature-a");
     assert_eq!(b.meta.head, "feature-b");
     assert_eq!(a.meta.base, b.meta.base, "both branches share the base");
-    assert_ne!(
-        state_path(dir, &base, &a.meta),
-        state_path(dir, &base, &b.meta),
-        "the two branches must not share a review state file"
-    );
-}
-
-/// Merging master into a branch mid-review moves the merge base. The state
-/// file must not move with it: the fingerprints exist so that a session picks
-/// up where the last one stopped, and re-opening four hundred approved cards
-/// because the base commit changed defeats every one of them.
-#[test]
-fn a_moving_merge_base_does_not_move_the_review_state_file() {
-    let tmp = TempDir::new().unwrap();
-    let dir = tmp.path();
-    init_repo(dir);
-    write(dir, "src/lib.rs", "fn one() {}\n");
-    commit(dir, "baseline");
-
-    git(dir, &["checkout", "-q", "-b", "feature"]);
-    write(dir, "src/lib.rs", "fn one() {}\n\nfn two() {}\n");
-    commit(dir, "feature work");
-
-    let repo = Repo::discover(dir).unwrap();
-    let before = expect_graph(analyze(&repo, Some("master"), None).unwrap());
-    let label = repo.base_label(Some("master")).unwrap();
-
-    // master moves on, and the reviewer merges it in — the routine mid-review
-    // event that used to orphan the whole review.
-    git(dir, &["checkout", "-q", "master"]);
-    write(dir, "src/other.rs", "fn elsewhere() {}\n");
-    commit(dir, "master moves on");
-    git(dir, &["checkout", "-q", "feature"]);
-    git(dir, &["merge", "-q", "--no-edit", "master"]);
-
-    let after = expect_graph(analyze(&repo, Some("master"), None).unwrap());
-
-    assert_ne!(
-        before.meta.base, after.meta.base,
-        "the merge should have moved the merge base"
-    );
-    assert_eq!(
-        repo.base_label(Some("master")).unwrap(),
-        label,
-        "the name the base was asked for does not move"
-    );
-    assert_eq!(
-        state_path(dir, &label, &before.meta),
-        state_path(dir, &label, &after.meta),
-        "the review state must survive a merge of the base branch"
-    );
-}
-
-/// A state file the session cannot read is the reviewer's problem, and the
-/// reviewer is looking at the browser: the loss has to reach `meta.warnings`,
-/// and the file itself has to be out of the way before the first click writes
-/// an empty state over it.
-#[test]
-fn an_unreadable_state_file_warns_in_the_snapshot_and_is_moved_aside() {
-    let tmp = TempDir::new().unwrap();
-    let dir = tmp.path();
-    init_repo(dir);
-    write(dir, "src/lib.rs", "fn one() {}\n");
-    commit(dir, "baseline");
-    write(dir, "src/lib.rs", "fn one() {}\n\nfn two() {}\n");
-    commit(dir, "more work");
-
-    let repo = Repo::discover(dir).unwrap();
-    let snapshot = expect_graph(analyze(&repo, Some("master~1"), None).unwrap());
-    let path = state_path(dir, "master~1", &snapshot.meta);
-    fs::create_dir_all(path.parent().unwrap()).unwrap();
-    fs::write(&path, "{ truncated mid-verdict").unwrap();
-
-    let args = Args {
-        base: Some("master~1".to_string()),
-        head: None,
-        port: 0,
-        no_open: true,
-        assets: None,
-    };
-    let session = prepare(&repo, &args).unwrap();
-    let Session::Serve { state, .. } = session else {
-        panic!("a changed range should start a server");
-    };
-
-    // Read the warning back the way the browser does, so this asserts what the
-    // reviewer is actually shown rather than a field on an internal struct.
-    let served = serve_graph(state);
-    let warnings = served["meta"]["warnings"].as_array().unwrap();
-    assert!(
-        warnings
-            .iter()
-            .any(|warning| warning.as_str().unwrap().contains("review state")),
-        "the unreadable state should be reported to the browser: {warnings:?}"
-    );
-    assert!(
-        !path.exists(),
-        "the unreadable file should be out of the way"
-    );
-    assert_eq!(
-        fs::read_to_string(path.with_extension("json.corrupt")).unwrap(),
-        "{ truncated mid-verdict"
-    );
-}
-
-/// `GET /api/graph` against an in-process router, as JSON.
-fn serve_graph(state: std::sync::Arc<gribovik::server::AppState>) -> serde_json::Value {
-    use http_body_util::BodyExt;
-    use tower::ServiceExt;
-
-    tokio::runtime::Builder::new_current_thread()
-        .enable_all()
-        .build()
-        .unwrap()
-        .block_on(async move {
-            let response = gribovik::server::router(state)
-                .oneshot(
-                    axum::http::Request::builder()
-                        .uri("/api/graph")
-                        .header(axum::http::header::HOST, "127.0.0.1:7391")
-                        .body(axum::body::Body::empty())
-                        .unwrap(),
-                )
-                .await
-                .unwrap();
-            let bytes = response.into_body().collect().await.unwrap().to_bytes();
-            serde_json::from_slice(&bytes).unwrap()
-        })
 }
 
 #[test]

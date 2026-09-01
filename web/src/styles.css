@@ -66,55 +66,6 @@ body {
   color: var(--muted);
 }
 
-.progress-counters {
-  display: flex;
-  flex-direction: column;
-  gap: 0.5rem;
-}
-
-.counter {
-  display: flex;
-  align-items: baseline;
-  gap: 0.6rem;
-  padding: 0.5rem 0.75rem;
-  background: var(--card);
-  color: var(--text);
-  border: 1px solid var(--line);
-  border-radius: 6px;
-  cursor: pointer;
-  text-align: left;
-}
-
-.counter:hover {
-  border-color: var(--muted);
-}
-
-.counter.active {
-  border-color: var(--focus);
-  box-shadow: 0 0 0 1px var(--focus);
-}
-
-.counter-value {
-  font-size: 1.3rem;
-  font-variant-numeric: tabular-nums;
-}
-
-.counter-approved .counter-value {
-  color: var(--added);
-}
-
-.counter-rejected .counter-value {
-  color: var(--deleted);
-}
-
-.counter-pending .counter-value {
-  color: var(--modified);
-}
-
-.counter-label {
-  color: var(--muted);
-}
-
 /* Canvas --------------------------------------------------------------- */
 
 .canvas {
@@ -136,26 +87,15 @@ body {
   border: 1px solid var(--modified);
   border-radius: 6px;
   /* The banner has no controls and never goes away, so leaving it in the hit
-     path would cost the reviewer the Approve/Reject buttons of every card
-     `fitView` happens to place under it, for the whole session. The warning
-     list takes the pointer back so it stays selectable and scrollable. */
+     path would block panning wherever `fitView` parks a card under it. The
+     warning list takes the pointer back so it stays selectable and
+     scrollable. */
   pointer-events: none;
 }
 
 .warnings strong,
 .warnings ul {
   pointer-events: auto;
-}
-
-.warnings.error {
-  top: auto;
-  bottom: 0.75rem;
-  /* Clear React Flow's controls, which sit in this exact corner at the same
-     stacking level: overlapping them takes Fit View away at the moment a
-     failed save makes the reviewer want it. */
-  left: 4rem;
-  background: rgba(229, 100, 109, 0.14);
-  border-color: var(--deleted);
 }
 
 .warnings ul {
@@ -175,21 +115,6 @@ body {
   background: var(--card);
   border: 1px solid var(--line);
   border-radius: 8px;
-}
-
-/* Approved work is done; keep it visible but out of the way. */
-.symbol-node.status-approved {
-  opacity: 0.45;
-}
-
-.symbol-node.status-rejected {
-  border-color: var(--deleted);
-}
-
-.symbol-node.highlighted {
-  opacity: 1;
-  border-color: var(--focus);
-  box-shadow: 0 0 0 2px var(--focus);
 }
 
 .symbol-header {
@@ -306,72 +231,6 @@ body {
 
 .diff-text {
   flex: 1;
-}
-
-/* Status and comments --------------------------------------------------- */
-
-.status-buttons {
-  display: flex;
-  gap: 0.4rem;
-}
-
-.status-buttons button,
-.comment-form button {
-  padding: 0.3rem 0.6rem;
-  background: var(--panel);
-  color: var(--text);
-  border: 1px solid var(--line);
-  border-radius: 5px;
-  cursor: pointer;
-}
-
-.status-buttons button:hover,
-.comment-form button:hover {
-  border-color: var(--muted);
-}
-
-.status-buttons button.active {
-  border-color: var(--focus);
-  color: var(--focus);
-}
-
-.comments {
-  max-height: 8rem;
-  overflow: auto;
-  margin: 0;
-  padding-left: 1.1rem;
-}
-
-.comments li {
-  display: flex;
-  flex-direction: column;
-}
-
-.comments time {
-  color: var(--muted);
-  font-size: 0.7rem;
-}
-
-.comment-form {
-  display: flex;
-  gap: 0.4rem;
-}
-
-.comment-form input {
-  flex: 1;
-  min-width: 0;
-  padding: 0.3rem 0.5rem;
-  background: var(--panel);
-  color: var(--text);
-  border: 1px solid var(--line);
-  border-radius: 5px;
-}
-
-.comment-form input:focus,
-.status-buttons button:focus-visible,
-.counter:focus-visible {
-  outline: 2px solid var(--focus);
-  outline-offset: 1px;
 }
 
 /* React Flow ------------------------------------------------------------ */

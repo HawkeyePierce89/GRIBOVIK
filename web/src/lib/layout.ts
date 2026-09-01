@@ -9,53 +9,21 @@
 import ELK from "elkjs/lib/elk.bundled.js";
 import type { Edge } from "@xyflow/react";
 
-import { reviewFor } from "./review";
 import type { SymbolFlowNode } from "./transform";
-import type { ReviewState } from "../types/snapshot";
 
 /** Card width, fixed by `.symbol-node` in the stylesheet. */
 export const NODE_WIDTH = 420;
 
 /**
- * Everything on a card except the diff: header, name, buttons, comment form,
- * padding and gaps. Measured against the stylesheet rather than the DOM —
- * layout runs once, before any card has rendered.
+ * Everything on a card except the diff: header, name, padding and gaps.
+ * Measured against the stylesheet rather than the DOM — layout runs once,
+ * before any card has rendered.
  */
-const CARD_CHROME_HEIGHT = 176;
+const CARD_CHROME_HEIGHT = 96;
 /** `.diff-line` is `12px/1.45` monospace. */
 const DIFF_LINE_HEIGHT = 18;
 /** `.diff` scrolls past `max-height: 16rem`, so taller cards do not exist. */
 const MAX_DIFF_HEIGHT = 256;
-/** A `.comments li` is a timestamp line over a text line. */
-const COMMENT_HEIGHT = 34;
-/** `.comments` scrolls past `max-height: 8rem`. */
-const MAX_COMMENTS_HEIGHT = 128;
-/** The `gap: 0.5rem` `.symbol-node` puts above the comment list. */
-const COMMENTS_GAP = 8;
-
-/**
- * Vertical room left free below every card for comments added *after* layout.
- *
- * Layout runs once, on load, and React Flow then holds each card at the
- * position it was given — but a card grows downward the moment a comment is
- * added to it, and nothing recomputes the neighbours below. Two comments are
- * already taller than any ordinary gap, so the card would be drawn over the
- * next one. Re-running elk on every comment is the other way out and a worse
- * one: cards the reviewer is not looking at would jump around mid-review.
- *
- * `MAX_COMMENTS_HEIGHT` is a hard ceiling — the list scrolls past it — so this
- * much headroom makes the overlap impossible rather than merely unlikely.
- *
- * It is reserved by padding the height each card is *declared* with, not by
- * inflating elk's spacing options: `elk.spacing.nodeNode` is a minimum
- * elk-layered applies within a layer and not a floor on every pair of boxes
- * that end up vertically adjacent. Measured on this repository's own diff, 620
- * cards laid out with the spacing at 196 left 64 pairs closer than that, the
- * tightest 21px apart — and raising the option to 500 left the same 21px gap.
- * Padding the boxes leaves none: elk cannot overlap a card with room it thinks
- * is part of the card.
- */
-const COMMENT_HEADROOM = MAX_COMMENTS_HEIGHT + COMMENTS_GAP;
 
 /**
  * elk in a real web worker, so the tab stays alive while it thinks.
@@ -107,12 +75,10 @@ const LAYOUT_OPTIONS: Record<string, string> = {
   "elk.algorithm": "layered",
   "elk.direction": "RIGHT",
   "elk.layered.spacing.nodeNodeBetweenLayers": "120",
-  // The visible gap between cards. Room for comments added later is not here —
-  // it rides along inside each card's declared height, see `COMMENT_HEADROOM`.
-  // `nodeNode` separates cards inside one connected component; anything the
-  // edge resolver found no caller for is a component of its own, and those are
-  // packed by `componentComponent` — most of a real graph, and 20px apart if
-  // left at its default.
+  // The visible gap between cards. `nodeNode` separates cards inside one
+  // connected component; anything the edge resolver found no caller for is a
+  // component of its own, and those are packed by `componentComponent` — most
+  // of a real graph, and 20px apart if left at its default.
   "elk.spacing.nodeNode": "60",
   "elk.spacing.componentComponent": "60",
   "elk.layered.nodePlacement.strategy": "BRANDES_KOEPF",
@@ -122,50 +88,30 @@ const LAYOUT_OPTIONS: Record<string, string> = {
  * How tall a card will render. A card's height is driven by how many diff
  * lines it carries, and telling elk that one card is 200px and another 430px
  * is what keeps a long diff from being drawn over its neighbour.
- *
- * `state` is the review the cards will render with — comments are part of the
- * card, so reopening a review that already has some makes every commented card
- * taller than a diff-only estimate predicts, and elk stacks them into each
- * other. It defaults to empty for a first run, where no card has comments yet.
- *
- * This is the height the card has *now*; room for the comments a reviewer adds
- * during the session is reserved separately, as [`COMMENT_HEADROOM`] below
- * every card, so that the estimate here stays an honest answer to "how tall is
- * this card" and can be compared against a rendered one.
  */
-export function nodeHeight(
-  node: SymbolFlowNode,
-  state: ReviewState = {},
-): number {
+export function nodeHeight(node: SymbolFlowNode): number {
   const lines = node.data.snapshot.diff.length;
-  const comments = reviewFor(state, node.id).comments.length;
   return (
-    CARD_CHROME_HEIGHT +
-    Math.min(lines * DIFF_LINE_HEIGHT, MAX_DIFF_HEIGHT) +
-    Math.min(comments * COMMENT_HEIGHT, MAX_COMMENTS_HEIGHT)
+    CARD_CHROME_HEIGHT + Math.min(lines * DIFF_LINE_HEIGHT, MAX_DIFF_HEIGHT)
   );
 }
 
 /**
  * Positions without elk: one column per file, cards stacked in snapshot order.
  *
- * Layout is the one part of the load that is purely cosmetic — the diff, the
- * verdicts and the counters are all readable without it — so a worker that
- * fails to start must not cost the reviewer the whole review. The columns are
- * wide enough that no two cards overlap, which is the only property the canvas
- * actually needs.
+ * Layout is the one part of the load that is purely cosmetic — the diff is
+ * readable without it — so a worker that fails to start must not cost the
+ * reviewer the whole review. The columns are wide enough that no two cards
+ * overlap, which is the only property the canvas actually needs.
  */
-export function gridLayout(
-  nodes: SymbolFlowNode[],
-  state: ReviewState = {},
-): SymbolFlowNode[] {
+export function gridLayout(nodes: SymbolFlowNode[]): SymbolFlowNode[] {
   const columns = new Map<string, number>();
   const nextY = new Map<string, number>();
   return nodes.map((node) => {
     const file = node.data.snapshot.file;
     if (!columns.has(file)) columns.set(file, columns.size);
     const y = nextY.get(file) ?? 0;
-    nextY.set(file, y + nodeHeight(node, state) + COMMENT_HEADROOM + 60);
+    nextY.set(file, y + nodeHeight(node) + 60);
     return {
       ...node,
       position: { x: (columns.get(file) as number) * (NODE_WIDTH + 120), y },
@@ -206,7 +152,6 @@ function timeout(ms: number): { promise: Promise<never>; cancel: () => void } {
 export async function layout(
   nodes: SymbolFlowNode[],
   edges: Edge[],
-  state: ReviewState = {},
 ): Promise<SymbolFlowNode[]> {
   if (nodes.length === 0) return [];
 
@@ -216,10 +161,7 @@ export async function layout(
     children: nodes.map((node) => ({
       id: node.id,
       width: NODE_WIDTH,
-      // Taller than the card renders, by `COMMENT_HEADROOM`: the difference is
-      // the room a card needs to grow into when a comment is added to it, and
-      // the only way to make elk actually keep it is to call it part of the box.
-      height: nodeHeight(node, state) + COMMENT_HEADROOM,
+      height: nodeHeight(node),
     })),
     edges: edges.map((edge) => ({
       id: edge.id,
