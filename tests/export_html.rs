@@ -1,11 +1,11 @@
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::process::Command;
 
+use clap::Parser;
 use gribovik::cli::{self, Args, Session};
 use gribovik::git::Repo;
 use tempfile::TempDir;
-use clap::Parser;
 
 /// Run git in `dir`, asserting success and returning trimmed stdout.
 fn git(dir: &Path, args: &[&str]) -> String {
@@ -52,11 +52,7 @@ fn export_html_writes_a_self_contained_page() {
     let tmp = TempDir::new().unwrap();
     let dir = tmp.path();
     init_repo(dir);
-    write_file(
-        dir,
-        "src/counter.rs",
-        "pub fn bump() {}\n",
-    );
+    write_file(dir, "src/counter.rs", "pub fn bump() {}\n");
     let base = commit(dir, "baseline");
     write_file(
         dir,
@@ -68,18 +64,17 @@ fn export_html_writes_a_self_contained_page() {
     let repo = Repo::discover(dir).unwrap();
     let out_dir = TempDir::new().unwrap();
     let out_file = out_dir.path().join("out.html");
-    
-    let args = parse(&[
-        &base,
-        &head,
-        "--export",
-        out_file.to_str().unwrap(),
-    ]);
+
+    let args = parse(&[&base, &head, "--export", out_file.to_str().unwrap()]);
 
     let session = cli::prepare(&repo, &args).unwrap();
-    
+
     match session {
-        Session::Export { snapshot, assets, path } => {
+        Session::Export {
+            snapshot,
+            assets,
+            path,
+        } => {
             gribovik::export::write(&assets, &snapshot, &path).unwrap();
         }
         _ => panic!("expected Session::Export"),
@@ -90,12 +85,18 @@ fn export_html_writes_a_self_contained_page() {
     assert_eq!(entries.len(), 1);
 
     let html = fs::read_to_string(&out_file).unwrap();
-    assert!(html.contains("__GRIBOVIK_SNAPSHOT__"), "missing snapshot payload");
+    assert!(
+        html.contains("__GRIBOVIK_SNAPSHOT__"),
+        "missing snapshot payload"
+    );
     assert!(html.contains("<script"), "missing script tags");
     assert!(html.contains("<style"), "missing style tags");
     assert!(html.contains("record"), "missing changed symbol name");
 
-    assert!(!html.contains("/assets/"), "contains un-inlined /assets/ path");
+    assert!(
+        !html.contains("/assets/"),
+        "contains un-inlined /assets/ path"
+    );
     assert!(!html.contains("/api/"), "contains un-inlined /api/ path");
 }
 
@@ -104,17 +105,13 @@ fn export_with_no_changes_writes_no_file() {
     let tmp = TempDir::new().unwrap();
     let dir = tmp.path();
     init_repo(dir);
-    write_file(
-        dir,
-        "src/counter.rs",
-        "pub fn bump() {}\n",
-    );
+    write_file(dir, "src/counter.rs", "pub fn bump() {}\n");
     let base = commit(dir, "baseline");
 
     let repo = Repo::discover(dir).unwrap();
     let out_dir = TempDir::new().unwrap();
     let out_file = out_dir.path().join("out.html");
-    
+
     let args = parse(&[
         &base,
         &base, // no changes
@@ -123,7 +120,7 @@ fn export_with_no_changes_writes_no_file() {
     ]);
 
     let session = cli::prepare(&repo, &args).unwrap();
-    
+
     match session {
         Session::NoChanges(msg) => {
             assert!(msg.contains("no reviewable changes"));

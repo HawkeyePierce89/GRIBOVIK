@@ -73,7 +73,7 @@ Tagged releases carry prebuilt binaries for five targets on the [Releases page](
 ## Build
 
 The binary embeds the frontend, so the SPA must be built first. `build.rs`
-refuses to compile without `web/dist/index.html`.
+refuses to compile without `web/dist/index.html` and `web/dist/export.html`.
 
 ```sh
 just build        # npm ci && npm run build in web/, then cargo build --release
@@ -85,6 +85,9 @@ Or without `just`:
 cd web && npm ci && npm run build && cd ..
 cargo build --release
 ```
+
+Note that `npm run build` produces both `dist/index.html` (the SPA shell) and
+`dist/export.html` (the single-file shell used by `--export`).
 
 The binary lands at `target/release/gribovik`; copy it anywhere on your `PATH`.
 
@@ -111,9 +114,17 @@ work.
 
 | Flag | Default | Meaning |
 | --- | --- | --- |
+| `--export <FILE>` | none | Write the graph to a self-contained HTML file instead of starting a server. |
 | `--port <PORT>` | `0` | Port to serve on. `0` asks the OS for a free one. |
 | `--no-open` | off | Print the URL instead of opening a browser. |
 | `--assets <DIR>` | embedded | Serve the frontend from a directory on disk instead of the build baked into the binary. Useful with `web/dist` while working on the UI. |
+
+When using `--export`, GRIBOVIK writes a single, self-contained HTML file with
+all data and scripts inlined. This file opens instantly in a browser by
+double-clicking it, with no server required. If your project uses the provided
+GitHub Actions PR workflow, it will attach this file as an artifact: download
+it from the PR's Checks tab, extract it, and open it locally, as GitHub does
+not render artifact HTML directly in the browser.
 
 The server binds loopback only, and answers only requests addressed to a
 loopback name — `localhost`, `127.0.0.1` or `[::1]`, with or without a port.

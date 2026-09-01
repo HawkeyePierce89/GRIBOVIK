@@ -220,22 +220,22 @@ writes the result. Serve mode is untouched.
 **Files:**
 - Modify: `README.md`, `CLAUDE.md`
 
-- [ ] README: add `--export <FILE>` to the flags table, plus a few sentences on
+- [x] README: add `--export <FILE>` to the flags table, plus a few sentences on
       what the file is (one self-contained page, opens by double-click, no
       server) and the PR workflow's artifact in the reviewer's terms —
       download it from the PR's Checks tab and open it locally, since GitHub
       does not render artifact HTML in the browser
-- [ ] README: note in the Build section that `npm run build` now produces both
+- [x] README: note in the Build section that `npm run build` now produces both
       `dist/index.html` and `dist/export.html`
-- [ ] README: keep every added line wrapped at ~78 columns
-- [ ] CLAUDE.md: add `src/export.rs`, `web/export.html`,
+- [x] README: keep every added line wrapped at ~78 columns
+- [x] CLAUDE.md: add `src/export.rs`, `web/export.html`,
       `web/vite.config.export.ts`, `web/src/lib/{elk,snapshot}.ts` and
       `tests/export_html.rs` to the layout tree; state that `build.rs` now also
       requires `web/dist/export.html`; add a short note that `--export` is a
       second output for the same snapshot and that the injection anchor is
       `</head>`. Leave the "one route" HTTP API section as-is — it is still
       true
-- [ ] verify no other CLAUDE.md sentence has become false
+- [x] verify no other CLAUDE.md sentence has become false
 
 ### Task 7: Verify acceptance criteria
 
