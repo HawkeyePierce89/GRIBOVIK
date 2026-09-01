@@ -99,7 +99,13 @@ pub fn prepare(repo: &Repo, args: &Args) -> Result<Session> {
         Analysis::Graph(snapshot) => *snapshot,
     };
 
-    let state_path = review::state_path(repo.git_dir()?, &snapshot.meta.base, &snapshot.meta.head);
+    // Both halves of the key are names, not commits. `snapshot.meta.base` is
+    // the merge base — a sha that moves under a rebase or a merge of master
+    // into the branch, either of which would file the next session under a new
+    // name and lose every verdict. The name the reviewer asked for does not
+    // move.
+    let base_label = repo.base_label(args.base.as_deref())?;
+    let state_path = review::state_path(repo.git_dir()?, &base_label, &snapshot.meta.head);
     // Reconciled against the snapshot before anything can read it: the file is
     // keyed by branch, so it survives new commits on that branch, and a symbol
     // those commits rewrote must come back as pending rather than wearing the

@@ -214,14 +214,25 @@ pub fn stamp(state: &mut ReviewState, snapshot: &GraphSnapshot) {
 
 /// Read the state at `path`, falling back to an empty state.
 ///
-/// A missing file is the normal first-run case. A corrupt one is reported on
+/// A missing file is the normal first-run case and says nothing. Every other
+/// failure — no permission, not valid UTF-8, corrupt JSON — is reported on
 /// stderr and then ignored, so a hand-edited or truncated file costs the
-/// reviewer their marks but not the session.
+/// reviewer their marks but not the session. The report is the whole point:
+/// the first click of the new session writes the empty state back over the
+/// file, so a silent fallback would turn "this file is unreadable today" into
+/// "this review is gone", with nothing on the terminal to say so.
 pub fn load(path: impl AsRef<Path>) -> ReviewState {
     let path = path.as_ref();
     let text = match fs::read_to_string(path) {
         Ok(text) => text,
-        Err(_) => return ReviewState::new(),
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => return ReviewState::new(),
+        Err(err) => {
+            eprintln!(
+                "warning: ignoring unreadable review state {}: {err}",
+                path.display()
+            );
+            return ReviewState::new();
+        }
     };
     match serde_json::from_str(&text) {
         Ok(state) => state,
@@ -425,6 +436,19 @@ mod tests {
         let path = state_path(dir.path(), "base", "head");
         fs::create_dir_all(path.parent().unwrap()).unwrap();
         fs::write(&path, "{ this is not json").unwrap();
+
+        assert_eq!(load(&path), ReviewState::new());
+    }
+
+    /// A file that is not UTF-8 fails in `read_to_string`, not in serde, so it
+    /// used to take the silent path — an empty state with nothing on stderr,
+    /// and the reviewer's first click wrote that emptiness back over the file.
+    #[test]
+    fn load_of_a_file_that_is_not_utf8_is_empty() {
+        let dir = TempDir::new().unwrap();
+        let path = state_path(dir.path(), "base", "head");
+        fs::create_dir_all(path.parent().unwrap()).unwrap();
+        fs::write(&path, [0x7b, 0xff, 0xfe, 0x7d]).unwrap();
 
         assert_eq!(load(&path), ReviewState::new());
     }

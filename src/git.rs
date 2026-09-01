@@ -139,22 +139,24 @@ impl Repo {
         }
     }
 
-    /// Resolve the revision the diff is taken from.
+    /// The revision the base was *named* by: the explicit argument, or
+    /// whichever of `origin/master` / `origin/main` exists.
     ///
-    /// With an explicit base, that revision is verified; without one,
-    /// `origin/master` then `origin/main` are probed. Either way the answer is
-    /// the merge base with `head`, so the diff shows what `head` adds rather
-    /// than what the base branch moved on to.
-    pub fn resolve_base(&self, explicit: Option<&str>, head: &str) -> Result<String> {
-        if !self.rev_exists(head) {
-            bail!("unknown revision: {head}");
-        }
-        let base = match explicit {
+    /// This is the branch-side half of [`resolve_base`](Self::resolve_base),
+    /// split out because review state is filed under it. The merge base is a
+    /// commit id, and it moves the moment the branch is rebased or master is
+    /// merged in — filing under it would orphan a review of four hundred cards
+    /// on a routine `git rebase`, which is exactly what the per-node
+    /// fingerprints exist to avoid. The name does not move, so the saved state
+    /// is found again and `review::reconcile` re-opens only the cards whose
+    /// own text actually changed.
+    pub fn base_label(&self, explicit: Option<&str>) -> Result<String> {
+        match explicit {
             Some(rev) => {
                 if !self.rev_exists(rev) {
                     bail!("unknown revision: {rev}");
                 }
-                rev.to_string()
+                Ok(rev.to_string())
             }
             None => BASE_CANDIDATES
                 .iter()
@@ -165,8 +167,21 @@ impl Repo {
                         "no base revision given and neither origin/master nor origin/main exists; \
                          pass a base explicitly"
                     )
-                })?,
-        };
+                }),
+        }
+    }
+
+    /// Resolve the revision the diff is taken from.
+    ///
+    /// With an explicit base, that revision is verified; without one,
+    /// `origin/master` then `origin/main` are probed. Either way the answer is
+    /// the merge base with `head`, so the diff shows what `head` adds rather
+    /// than what the base branch moved on to.
+    pub fn resolve_base(&self, explicit: Option<&str>, head: &str) -> Result<String> {
+        if !self.rev_exists(head) {
+            bail!("unknown revision: {head}");
+        }
+        let base = self.base_label(explicit)?;
         self.merge_base(&base, head)
     }
 

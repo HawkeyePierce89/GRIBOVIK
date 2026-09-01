@@ -212,9 +212,11 @@ fn fixture_repo(dir: &Path) -> String {
     base
 }
 
-/// Where the review state for a snapshot would be written.
-fn state_path(dir: &Path, meta: &gribovik::core::Meta) -> PathBuf {
-    gribovik::review::state_path(dir.join(".git"), &meta.base, &meta.head)
+/// Where the review state for a snapshot would be written, keyed the way
+/// `cli::prepare` keys it: the *name* the base was asked for, never
+/// `meta.base`, which is the merge base and moves under a rebase.
+fn state_path(dir: &Path, base_label: &str, meta: &gribovik::core::Meta) -> PathBuf {
+    gribovik::review::state_path(dir.join(".git"), base_label, &meta.head)
 }
 
 fn expect_graph(analysis: Analysis) -> GraphSnapshot {
@@ -495,9 +497,55 @@ fn the_default_head_is_reported_as_the_branch_it_is_on() {
     assert_eq!(b.meta.head, "feature-b");
     assert_eq!(a.meta.base, b.meta.base, "both branches share the base");
     assert_ne!(
-        state_path(dir, &a.meta),
-        state_path(dir, &b.meta),
+        state_path(dir, &base, &a.meta),
+        state_path(dir, &base, &b.meta),
         "the two branches must not share a review state file"
+    );
+}
+
+/// Merging master into a branch mid-review moves the merge base. The state
+/// file must not move with it: the fingerprints exist so that a session picks
+/// up where the last one stopped, and re-opening four hundred approved cards
+/// because the base commit changed defeats every one of them.
+#[test]
+fn a_moving_merge_base_does_not_move_the_review_state_file() {
+    let tmp = TempDir::new().unwrap();
+    let dir = tmp.path();
+    init_repo(dir);
+    write(dir, "src/lib.rs", "fn one() {}\n");
+    commit(dir, "baseline");
+
+    git(dir, &["checkout", "-q", "-b", "feature"]);
+    write(dir, "src/lib.rs", "fn one() {}\n\nfn two() {}\n");
+    commit(dir, "feature work");
+
+    let repo = Repo::discover(dir).unwrap();
+    let before = expect_graph(analyze(&repo, Some("master"), None).unwrap());
+    let label = repo.base_label(Some("master")).unwrap();
+
+    // master moves on, and the reviewer merges it in — the routine mid-review
+    // event that used to orphan the whole review.
+    git(dir, &["checkout", "-q", "master"]);
+    write(dir, "src/other.rs", "fn elsewhere() {}\n");
+    commit(dir, "master moves on");
+    git(dir, &["checkout", "-q", "feature"]);
+    git(dir, &["merge", "-q", "--no-edit", "master"]);
+
+    let after = expect_graph(analyze(&repo, Some("master"), None).unwrap());
+
+    assert_ne!(
+        before.meta.base, after.meta.base,
+        "the merge should have moved the merge base"
+    );
+    assert_eq!(
+        repo.base_label(Some("master")).unwrap(),
+        label,
+        "the name the base was asked for does not move"
+    );
+    assert_eq!(
+        state_path(dir, &label, &before.meta),
+        state_path(dir, &label, &after.meta),
+        "the review state must survive a merge of the base branch"
     );
 }
 

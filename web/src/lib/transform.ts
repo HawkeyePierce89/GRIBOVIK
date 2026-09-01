@@ -3,7 +3,7 @@
  * until `layout.ts` places them, which keeps this module trivially testable.
  */
 
-import type { Edge, Node } from "@xyflow/react";
+import { MarkerType, type Edge, type Node } from "@xyflow/react";
 
 import type { GraphSnapshot, SnapshotNode } from "../types/snapshot";
 
@@ -16,6 +16,17 @@ export type SymbolFlowNode = Node<SymbolNodeData, "symbol">;
 
 /** The dash pattern that marks an edge the resolver was unsure about. */
 export const AMBIGUOUS_DASH = "6 4";
+
+/**
+ * Every edge is drawn caller → callee.
+ *
+ * The arrowhead is not decoration: this is a call graph, and left-to-right
+ * placement only reads as direction until the layout has to route an edge
+ * backwards — which a cycle, or a callee that also calls its caller's
+ * neighbour, produces on any real branch. Without a head those two cards are
+ * connected and nothing says which one calls the other.
+ */
+export const ARROW = { type: MarkerType.ArrowClosed, width: 18, height: 18 };
 
 /** Edge id for a `(from, to)` pair; the resolver already deduplicated these. */
 export function edgeId(from: string, to: string): string {
@@ -48,6 +59,7 @@ export function toFlow(snapshot: GraphSnapshot): {
       source: edge.from,
       target: edge.to,
       animated: false,
+      markerEnd: ARROW,
       style:
         edge.confidence === "ambiguous"
           ? { strokeDasharray: AMBIGUOUS_DASH }

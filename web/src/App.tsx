@@ -16,8 +16,9 @@ import {
   useNodesState,
   type Edge,
   type NodeTypes,
+  type ReactFlowInstance,
 } from "@xyflow/react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import "@xyflow/react/dist/style.css";
 
@@ -133,6 +134,31 @@ function Graph({ loaded }: { loaded: Loaded }) {
     [review, highlighted],
   );
 
+  // A branch worth reviewing lays out tens of thousands of pixels wide, so
+  // `fitView` parks the first paint at a zoom where a card is a few pixels
+  // across and the highlight ring is sub-pixel. Lighting the matching cards is
+  // only useful if the viewport also goes to them.
+  const flow = useRef<ReactFlowInstance<SymbolFlowNode, Edge> | null>(null);
+  // Read through a ref so the pan fires when the reviewer picks a status and
+  // not every time a verdict changes which cards match — approving a card
+  // while "Pending" is lit must not yank the canvas out from under the click.
+  const highlightedRef = useRef(highlighted);
+  highlightedRef.current = highlighted;
+
+  useEffect(() => {
+    const instance = flow.current;
+    if (instance === null || selected === null) return;
+    const ids = [...highlightedRef.current].map((id) => ({ id }));
+    if (ids.length === 0) return;
+    // `maxZoom` keeps the last pending card from filling the screen at 8x.
+    void instance.fitView({
+      nodes: ids,
+      duration: 400,
+      maxZoom: 1,
+      padding: 0.2,
+    });
+  }, [selected]);
+
   const warnings = loaded.warnings;
 
   return (
@@ -169,6 +195,9 @@ function Graph({ loaded }: { loaded: Loaded }) {
             nodes={nodes}
             edges={edges}
             nodeTypes={nodeTypes}
+            onInit={(instance) => {
+              flow.current = instance;
+            }}
             onNodesChange={onNodesChange}
             onEdgesChange={onEdgesChange}
             // The graph is the diff, not a document to edit: Backspace would

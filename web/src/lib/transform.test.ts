@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import type { GraphSnapshot, SnapshotNode } from "../types/snapshot";
-import { AMBIGUOUS_DASH, toFlow } from "./transform";
+import { AMBIGUOUS_DASH, ARROW, toFlow } from "./transform";
 
 function node(id: string, overrides: Partial<SnapshotNode> = {}): SnapshotNode {
   return {
@@ -81,9 +81,24 @@ describe("toFlow", () => {
         source: "src/b.rs::B::beta",
         target: "src/a.rs::alpha",
         animated: false,
+        markerEnd: ARROW,
         style: {},
       },
     ]);
+  });
+
+  it("points every edge at its callee, so direction survives a back-route", () => {
+    const { edges } = toFlow(
+      snapshot({
+        nodes: [node("a::one"), node("b::two")],
+        edges: [
+          { from: "a::one", to: "b::two", confidence: "certain" },
+          { from: "b::two", to: "a::one", confidence: "ambiguous" },
+        ],
+      }),
+    );
+
+    expect(edges.map((edge) => edge.markerEnd)).toEqual([ARROW, ARROW]);
   });
 
   it("dashes ambiguous edges and leaves certain ones solid", () => {

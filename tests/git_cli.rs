@@ -190,6 +190,28 @@ fn an_explicit_base_resolves_to_the_merge_base() {
     );
 }
 
+/// The label is what review state is filed under, so it has to be the name —
+/// a sha would file every rebase under a new file.
+#[test]
+fn the_base_label_is_the_name_asked_for_not_the_commit_it_resolves_to() {
+    let (dir, repo) = seeded_repo();
+    let _remote = push_to_new_origin(dir.path(), "master");
+    write(dir.path(), "src/lib.rs", "fn one() { two(); }\n");
+    commit(dir.path(), "work");
+
+    assert_eq!(repo.base_label(Some("master")).unwrap(), "master");
+    assert_eq!(repo.base_label(None).unwrap(), "origin/master");
+}
+
+#[test]
+fn an_unknown_base_label_is_reported_by_name() {
+    let (_dir, repo) = seeded_repo();
+
+    let err = repo.base_label(Some("no-such-ref")).unwrap_err();
+
+    assert_eq!(err.to_string(), "unknown revision: no-such-ref");
+}
+
 #[test]
 fn an_unknown_base_revision_is_reported_by_name() {
     let (_dir, repo) = seeded_repo();
