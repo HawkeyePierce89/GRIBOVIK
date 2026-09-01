@@ -128,7 +128,9 @@ function Graph({ loaded }: { loaded: Loaded }) {
         <main className="canvas">
           {warnings.length > 0 && (
             <div className="warnings" role="status">
-              <strong>{warnings.length} warnings</strong>
+              <strong>
+                {warnings.length} warning{warnings.length === 1 ? "" : "s"}
+              </strong>
               <ul>
                 {warnings.map((warning, index) => (
                   <li key={index}>{warning}</li>
@@ -149,6 +151,13 @@ function Graph({ loaded }: { loaded: Loaded }) {
             nodeTypes={nodeTypes}
             onNodesChange={onNodesChange}
             onEdgesChange={onEdgesChange}
+            // The graph is the diff, not a document to edit: Backspace would
+            // otherwise delete the selected card for the rest of the session
+            // while the progress panel — counting the snapshot, not the canvas
+            // — kept asking the reviewer to act on it. Nothing consumes new
+            // connections either, so the handles must not offer to make any.
+            deleteKeyCode={null}
+            nodesConnectable={false}
             minZoom={0.05}
             fitView
           >

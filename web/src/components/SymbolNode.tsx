@@ -45,7 +45,7 @@ export function SymbolNode({ data }: NodeProps<SymbolFlowNode>) {
 
   return (
     <div className={classes}>
-      <Handle type="target" position={Position.Left} />
+      <Handle type="target" position={Position.Left} isConnectable={false} />
 
       <header className="symbol-header">
         <span className="symbol-file" title={node.file}>
@@ -101,7 +101,7 @@ export function SymbolNode({ data }: NodeProps<SymbolFlowNode>) {
         <button type="submit">Add</button>
       </form>
 
-      <Handle type="source" position={Position.Right} />
+      <Handle type="source" position={Position.Right} isConnectable={false} />
     </div>
   );
 }

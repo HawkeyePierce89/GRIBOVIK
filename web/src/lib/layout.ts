@@ -2,8 +2,8 @@
  * Graph layout via elkjs.
  *
  * Layered left-to-right reads like a call chain: callers on the left, callees
- * to their right. elk runs in a web worker inside the browser bundle, so this
- * is async and must be awaited before the nodes are handed to React Flow.
+ * to their right. Layout is async and must be awaited before the nodes are
+ * handed to React Flow.
  */
 
 import ELK from "elkjs/lib/elk.bundled.js";
@@ -31,7 +31,25 @@ const COMMENT_HEIGHT = 34;
 /** `.comments` scrolls past `max-height: 8rem`. */
 const MAX_COMMENTS_HEIGHT = 128;
 
-const elk = new ELK();
+/**
+ * elk in a real web worker, so the tab stays alive while it thinks.
+ *
+ * `elk.bundled.js` defaults to a *fake* worker that runs the algorithm inline:
+ * a few hundred cards is ten seconds of frozen page before the first card
+ * appears. Supplying a factory is what moves it off the main thread — the
+ * bundled build honours one. Outside a browser (the unit tests run in node)
+ * there is no `Worker`, and the inline fallback is what we want anyway.
+ */
+const elk = new ELK(
+  typeof Worker === "undefined"
+    ? {}
+    : {
+        workerFactory: () =>
+          new Worker(new URL("elkjs/lib/elk-worker.min.js", import.meta.url), {
+            type: "module",
+          }),
+      },
+);
 
 const LAYOUT_OPTIONS: Record<string, string> = {
   "elk.algorithm": "layered",

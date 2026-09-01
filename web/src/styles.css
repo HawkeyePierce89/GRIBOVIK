@@ -140,6 +140,10 @@ body {
 .warnings.error {
   top: auto;
   bottom: 0.75rem;
+  /* Clear React Flow's controls, which sit in this exact corner at the same
+     stacking level: overlapping them takes Fit View away at the moment a
+     failed save makes the reviewer want it. */
+  left: 4rem;
   background: rgba(229, 100, 109, 0.14);
   border-color: var(--deleted);
 }
