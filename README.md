@@ -56,8 +56,8 @@ altogether and named in the same banner.
 
 ## In the browser
 
-The left panel counts the changed symbols and how many are approved, rejected,
-or still pending. Clicking a counter highlights exactly those cards; clicking
+The left panel counts the cards — changed symbols plus the file-level
+catch-alls — and how many are approved, rejected, or still pending. Clicking a counter highlights exactly those cards; clicking
 it again clears the highlight. **Approved cards fade to 45% opacity** — that is
 deliberate, not a rendering glitch, so the canvas visibly empties as you work.
 

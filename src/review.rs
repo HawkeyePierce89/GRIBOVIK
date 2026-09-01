@@ -114,7 +114,14 @@ pub fn save(path: impl AsRef<Path>, state: &ReviewState) -> Result<()> {
     let json = serde_json::to_string_pretty(state).context("could not serialize review state")?;
     let temp = temp_path(dir, name);
     fs::write(&temp, json).with_context(|| format!("could not write {}", temp.display()))?;
-    fs::rename(&temp, path).with_context(|| format!("could not write {}", path.display()))?;
+    // A failing rename — a read-only directory, a target that turned into one
+    // — would otherwise leave the staging file behind, and `POST /api/state`
+    // fires on every click, so one persistent failure litters `.git/gribovik`
+    // with a file per verdict.
+    if let Err(err) = fs::rename(&temp, path) {
+        let _ = fs::remove_file(&temp);
+        return Err(err).with_context(|| format!("could not write {}", path.display()));
+    }
     Ok(())
 }
 
@@ -205,6 +212,25 @@ mod tests {
         let dir = TempDir::new().unwrap();
         let path = state_path(dir.path(), "base", "head");
         save(&path, &sample()).unwrap();
+
+        let leftovers: Vec<_> = fs::read_dir(path.parent().unwrap())
+            .unwrap()
+            .map(|entry| entry.unwrap().file_name().to_string_lossy().into_owned())
+            .filter(|name| name.ends_with(".tmp"))
+            .collect();
+        assert!(leftovers.is_empty(), "unexpected temp files: {leftovers:?}");
+    }
+
+    /// The staging file has to go even when the rename does not happen: a
+    /// directory standing where the state file belongs fails every save, and
+    /// the browser posts on every click.
+    #[test]
+    fn a_failed_rename_leaves_no_temp_file_behind() {
+        let dir = TempDir::new().unwrap();
+        let path = state_path(dir.path(), "base", "head");
+        fs::create_dir_all(&path).unwrap();
+
+        assert!(save(&path, &sample()).is_err());
 
         let leftovers: Vec<_> = fs::read_dir(path.parent().unwrap())
             .unwrap()

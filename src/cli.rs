@@ -80,10 +80,21 @@ pub fn prepare(repo: &Repo, args: &Args) -> Result<Session> {
 
     let analysis = pipeline::analyze(repo, args.base.as_deref(), args.head.as_deref())?;
     let snapshot = match analysis {
-        Analysis::NoChanges { base, head } => {
-            return Ok(Session::NoChanges(format!(
-                "no reviewable changes between {base} and {head}"
-            )));
+        Analysis::NoChanges {
+            base,
+            head,
+            warnings,
+        } => {
+            // The warnings come along because on this path they are the whole
+            // story: a range whose only source file could not be read reports
+            // "no reviewable changes" and exits 0, which reads as "nothing
+            // changed" unless the reason the file was skipped comes with it.
+            let mut message = format!("no reviewable changes between {base} and {head}");
+            for warning in &warnings {
+                message.push('\n');
+                message.push_str(warning);
+            }
+            return Ok(Session::NoChanges(message));
         }
         Analysis::Graph(snapshot) => *snapshot,
     };

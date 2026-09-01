@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import type { GraphSnapshot } from "../types/snapshot";
-import { NODE_WIDTH, layout, nodeHeight } from "./layout";
+import { NODE_WIDTH, gridLayout, layout, nodeHeight } from "./layout";
 import { toFlow } from "./transform";
 
 function chain(): GraphSnapshot {
@@ -126,5 +126,32 @@ describe("layout", () => {
 
   it("returns nothing for an empty graph", async () => {
     expect(await layout([], [])).toEqual([]);
+  });
+});
+
+describe("gridLayout", () => {
+  it("keeps cards from overlapping when elk is unavailable", () => {
+    const snapshot = chain();
+    snapshot.nodes[1]!.file = "b";
+    const { nodes } = toFlow(snapshot);
+
+    const placed = gridLayout(nodes);
+
+    // One column per file, and a file's cards stacked clear of each other —
+    // the only property the canvas needs from a fallback.
+    expect(placed[0]!.position).toEqual({ x: 0, y: 0 });
+    expect(placed[1]!.position.x).toBeGreaterThanOrEqual(NODE_WIDTH);
+    expect(placed[1]!.position.y).toBe(0);
+  });
+
+  it("stacks same-file cards clear of each other", () => {
+    const { nodes } = toFlow(chain());
+
+    const placed = gridLayout(nodes);
+
+    expect(placed[1]!.position.x).toBe(placed[0]!.position.x);
+    expect(placed[1]!.position.y).toBeGreaterThanOrEqual(
+      placed[0]!.position.y + nodeHeight(nodes[0]!),
+    );
   });
 });

@@ -215,7 +215,9 @@ fn fixture_repo(dir: &Path) -> String {
 fn expect_graph(analysis: Analysis) -> GraphSnapshot {
     match analysis {
         Analysis::Graph(snapshot) => *snapshot,
-        Analysis::NoChanges { base, head } => panic!("expected a graph for {base}..{head}"),
+        Analysis::NoChanges { base, head, .. } => {
+            panic!("expected a graph for {base}..{head}")
+        }
     }
 }
 
@@ -491,7 +493,8 @@ fn a_range_with_no_source_changes_reports_no_changes() {
         analysis,
         Analysis::NoChanges {
             base,
-            head: "HEAD".to_string()
+            head: "HEAD".to_string(),
+            warnings: Vec::new(),
         }
     );
     assert!(analysis.snapshot().is_none());
@@ -558,4 +561,30 @@ fn an_unknown_revision_is_reported_by_name() {
     let repo = Repo::discover(dir).unwrap();
     let error = analyze(&repo, Some("nope"), None).unwrap_err();
     assert_eq!(error.to_string(), "unknown revision: nope");
+}
+
+#[test]
+fn a_range_whose_only_source_is_unreadable_reports_why() {
+    let tmp = TempDir::new().unwrap();
+    let dir = tmp.path();
+    init_repo(dir);
+    fs::write(dir.join("blob.rs"), [0xff, 0xfe, 0x00, 0x9f]).unwrap();
+    let base = commit(dir, "baseline");
+    fs::write(dir.join("blob.rs"), [0xff, 0xfe, 0x00, 0x9f, 0x9f]).unwrap();
+    commit(dir, "feature");
+
+    let repo = Repo::discover(dir).unwrap();
+    let analysis = analyze(&repo, Some(&base), None).unwrap();
+
+    // "no reviewable changes" on its own would tell the reviewer the opposite
+    // of the truth: the `.rs` file did change, and was skipped.
+    match analysis {
+        Analysis::NoChanges { warnings, .. } => assert!(
+            warnings
+                .iter()
+                .any(|warning| warning.contains("blob.rs") && warning.contains("not UTF-8")),
+            "expected a non-UTF-8 warning, got {warnings:?}"
+        ),
+        Analysis::Graph(_) => panic!("an unreadable-only range should not produce a graph"),
+    }
 }

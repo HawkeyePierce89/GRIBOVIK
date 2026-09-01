@@ -24,7 +24,7 @@ import "@xyflow/react/dist/style.css";
 import { ProgressPanel } from "./components/ProgressPanel";
 import { SymbolNode } from "./components/SymbolNode";
 import { ReviewContext, useReviewState } from "./hooks/useReviewState";
-import { layout } from "./lib/layout";
+import { gridLayout, layout } from "./lib/layout";
 import { nodeIdsWithStatus } from "./lib/review";
 import { toFlow, type SymbolFlowNode } from "./lib/transform";
 import type { GraphSnapshot, ReviewState, Status } from "./types/snapshot";
@@ -43,6 +43,8 @@ type Loaded = {
   nodes: SymbolFlowNode[];
   edges: Edge[];
   initialState: ReviewState;
+  /** `meta.warnings` plus anything that degraded on the way in. */
+  warnings: string[];
 };
 
 export function App() {
@@ -54,16 +56,35 @@ export function App() {
 
     void (async () => {
       try {
+        // Only the snapshot is worth failing over. Degrading beats failing
+        // for the other two: previously recorded verdicts and elk positions
+        // are both things a review can start without, and losing the whole
+        // graph over either is a worse answer than saying what was lost.
+        const warnings: string[] = [];
         const [snapshot, initialState] = await Promise.all([
           getJson<GraphSnapshot>("/api/graph"),
-          getJson<ReviewState>("/api/state"),
+          getJson<ReviewState>("/api/state").catch((cause: unknown) => {
+            warnings.push(`starting from an empty review: ${String(cause)}`);
+            return {} as ReviewState;
+          }),
         ]);
         const flow = toFlow(snapshot);
         // Laying out with the saved state, not an empty one: cards that
         // already carry comments render taller than their diff alone implies.
-        const nodes = await layout(flow.nodes, flow.edges, initialState);
+        const nodes = await layout(flow.nodes, flow.edges, initialState).catch(
+          (cause: unknown) => {
+            warnings.push(`laid the graph out in a grid: ${String(cause)}`);
+            return gridLayout(flow.nodes, initialState);
+          },
+        );
         if (cancelled) return;
-        setLoaded({ snapshot, nodes, edges: flow.edges, initialState });
+        setLoaded({
+          snapshot,
+          nodes,
+          edges: flow.edges,
+          initialState,
+          warnings: [...snapshot.meta.warnings, ...warnings],
+        });
       } catch (cause: unknown) {
         if (!cancelled) setLoadError(String(cause));
       }
@@ -113,7 +134,7 @@ function Graph({ loaded }: { loaded: Loaded }) {
     [review, highlighted],
   );
 
-  const warnings = loaded.snapshot.meta.warnings;
+  const warnings = loaded.warnings;
 
   return (
     <ReviewContext.Provider value={context}>

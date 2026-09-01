@@ -23,7 +23,16 @@ pub const DEFAULT_HEAD: &str = "HEAD";
 pub enum Analysis {
     /// The range touches no reviewable source: no supported file changed, or
     /// the ones that did turned out to hold no changed lines.
-    NoChanges { base: String, head: String },
+    ///
+    /// The warnings ride along because they are the whole explanation on this
+    /// path: a range whose only `.rs` file is unreadable produces "no
+    /// reviewable changes" and exit 0, which reads as "nothing changed"
+    /// unless the reason the file was skipped comes with it.
+    NoChanges {
+        base: String,
+        head: String,
+        warnings: Vec<String>,
+    },
     /// A graph with at least one card.
     Graph(Box<GraphSnapshot>),
 }
@@ -41,7 +50,7 @@ impl Analysis {
     pub fn range(&self) -> (&str, &str) {
         match self {
             Analysis::Graph(snapshot) => (&snapshot.meta.base, &snapshot.meta.head),
-            Analysis::NoChanges { base, head } => (base, head),
+            Analysis::NoChanges { base, head, .. } => (base, head),
         }
     }
 }
@@ -92,6 +101,7 @@ pub fn analyze(repo: &Repo, base: Option<&str>, head: Option<&str>) -> Result<An
         return Ok(Analysis::NoChanges {
             base,
             head: head.to_string(),
+            warnings,
         });
     }
 
@@ -106,6 +116,7 @@ pub fn analyze(repo: &Repo, base: Option<&str>, head: Option<&str>) -> Result<An
         return Ok(Analysis::NoChanges {
             base,
             head: head.to_string(),
+            warnings: snapshot.meta.warnings,
         });
     }
     Ok(Analysis::Graph(Box::new(snapshot)))
@@ -173,6 +184,7 @@ mod tests {
         let analysis = Analysis::NoChanges {
             base: "aaa".to_string(),
             head: "feature".to_string(),
+            warnings: Vec::new(),
         };
         assert_eq!(analysis.range(), ("aaa", "feature"));
         assert!(analysis.snapshot().is_none());

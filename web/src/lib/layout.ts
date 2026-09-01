@@ -51,12 +51,20 @@ const elk = new ELK(
       },
 );
 
+/**
+ * `BRANDES_KOEPF` rather than `NETWORK_SIMPLEX`: the simplex placement is
+ * superlinear in edges and dominates the wait before the first card appears.
+ * Measured on this repository's own diff (569 cards, 1070 edges — an ordinary
+ * feature branch): 13.8 s against 0.47 s, for a placement difference a
+ * reviewer has to look for. The worker keeps the tab alive during that wait,
+ * but a blank "Loading…" is a blank page either way.
+ */
 const LAYOUT_OPTIONS: Record<string, string> = {
   "elk.algorithm": "layered",
   "elk.direction": "RIGHT",
   "elk.layered.spacing.nodeNodeBetweenLayers": "120",
   "elk.spacing.nodeNode": "60",
-  "elk.layered.nodePlacement.strategy": "NETWORK_SIMPLEX",
+  "elk.layered.nodePlacement.strategy": "BRANDES_KOEPF",
 };
 
 /**
@@ -80,6 +88,33 @@ export function nodeHeight(
     Math.min(lines * DIFF_LINE_HEIGHT, MAX_DIFF_HEIGHT) +
     Math.min(comments * COMMENT_HEIGHT, MAX_COMMENTS_HEIGHT)
   );
+}
+
+/**
+ * Positions without elk: one column per file, cards stacked in snapshot order.
+ *
+ * Layout is the one part of the load that is purely cosmetic — the diff, the
+ * verdicts and the counters are all readable without it — so a worker that
+ * fails to start must not cost the reviewer the whole review. The columns are
+ * wide enough that no two cards overlap, which is the only property the canvas
+ * actually needs.
+ */
+export function gridLayout(
+  nodes: SymbolFlowNode[],
+  state: ReviewState = {},
+): SymbolFlowNode[] {
+  const columns = new Map<string, number>();
+  const nextY = new Map<string, number>();
+  return nodes.map((node) => {
+    const file = node.data.snapshot.file;
+    if (!columns.has(file)) columns.set(file, columns.size);
+    const y = nextY.get(file) ?? 0;
+    nextY.set(file, y + nodeHeight(node, state) + 60);
+    return {
+      ...node,
+      position: { x: (columns.get(file) as number) * (NODE_WIDTH + 120), y },
+    };
+  });
 }
 
 /**

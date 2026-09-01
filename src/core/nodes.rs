@@ -184,7 +184,16 @@ fn symbol_cards(
             }
             None => {
                 let diff = slice_diff(file_diff, None, Some(symbol.range()));
-                nodes.push(symbol_node(file, symbol, ChangeKind::Added, *nth, diff));
+                // And the same guard again. A symbol whose qualifier changed
+                // but whose body did not — renaming the `impl` block, the
+                // class, the `extension` target — is absent from the old side
+                // under its new name, so every member of the renamed type
+                // arrives here with a slice of pure context. Carding those
+                // asks for a verdict on an addition the card does not show;
+                // the line that actually changed is already on the file card.
+                if diff.iter().any(is_change) {
+                    nodes.push(symbol_node(file, symbol, ChangeKind::Added, *nth, diff));
+                }
             }
         }
     }
@@ -846,6 +855,25 @@ mod tests {
         assert!(
             cards.iter().any(|card| card.contains("<file>")),
             "the removed lines have to land somewhere: {cards:?}"
+        );
+    }
+
+    /// Renaming a type moves every member to a name the old side never had,
+    /// so each one reaches the added branch with a slice of pure context. An
+    /// "added" card showing nothing added is the same verdict the reviewer
+    /// cannot give; the renamed line is carded on the file.
+    #[test]
+    fn an_added_card_with_nothing_added_in_it_is_not_emitted() {
+        let file = FileInput::modified(
+            "src/s.rs",
+            "impl Foo {\n    fn go(&self) { alpha(); }\n}\n",
+            "impl Bar {\n    fn go(&self) { alpha(); }\n}\n",
+        );
+        let cards = outline(&[file]);
+        assert_eq!(
+            cards,
+            vec![row("src/s.rs::<file>", FILE_KIND, "modified", "-1 +1")],
+            "an empty added card survived: {cards:?}"
         );
     }
 
