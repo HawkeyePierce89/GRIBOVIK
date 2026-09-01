@@ -198,20 +198,20 @@ writes the result. Serve mode is untouched.
 **Files:**
 - Create: `.github/workflows/pr-graph.yml`
 
-- [ ] `on: pull_request: branches: [master]`, `permissions: contents: read`
-- [ ] `actions/checkout@v7` with `fetch-depth: 0` so the merge base of the two
+- [x] `on: pull_request: branches: [master]`, `permissions: contents: read`
+- [x] `actions/checkout@v7` with `fetch-depth: 0` so the merge base of the two
       PR SHAs is reachable
-- [ ] a `shell: bash`, `set -euo pipefail` step that runs `gh release download`
+- [x] a `shell: bash`, `set -euo pipefail` step that runs `gh release download`
       for the `*x86_64-unknown-linux-gnu.tar.gz` asset of the latest release
       into `$RUNNER_TEMP`, unpacks it and `chmod +x` the binary
       (`GH_TOKEN: ${{ github.token }}`)
-- [ ] run the binary as `gribovik --export review.html "$BASE" "$HEAD"` with
+- [x] run the binary as `gribovik --export review.html "$BASE" "$HEAD"` with
       `BASE: ${{ github.event.pull_request.base.sha }}` and
       `HEAD: ${{ github.event.pull_request.head.sha }}` — the real PR head, not
       the synthetic merge commit
-- [ ] `actions/upload-artifact@v7` with a PR-numbered artifact name,
+- [x] `actions/upload-artifact@v7` with a PR-numbered artifact name,
       `path: review.html`, `if-no-files-found: ignore` so an empty PR passes
-- [ ] run `actionlint` on the new workflow — must pass (install it locally if
+- [x] run `actionlint` on the new workflow — must pass (install it locally if
       absent, e.g. `go install github.com/rhysd/actionlint/cmd/actionlint@latest`
       or `brew install actionlint`)
 
