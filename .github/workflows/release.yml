@@ -1,0 +1,138 @@
+name: release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  guard:
+    if: github.event_name != 'push' || !github.event.deleted
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.resolve.outputs.version }}
+    steps:
+      - uses: actions/checkout@v7
+      - name: Resolve version
+        id: resolve
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo_version=$(sed -n '/^version = /{s/^version = "\([^"]*\)".*/\1/p;q;}' Cargo.toml)
+          if [ "$GITHUB_EVENT_NAME" = "push" ] && [ "$GITHUB_REF_TYPE" = "tag" ]; then
+            version="${GITHUB_REF_NAME#v}"
+            if [ "$version" != "$cargo_version" ]; then
+              echo "::error::tag $GITHUB_REF_NAME implies version $version but Cargo.toml declares $cargo_version"
+              exit 1
+            fi
+          else
+            version="$(git rev-parse --short HEAD)"
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+  build:
+    needs: guard
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: x86_64-unknown-linux-gnu
+            os: ubuntu-latest
+          - target: aarch64-unknown-linux-gnu
+            os: ubuntu-24.04-arm
+          - target: aarch64-apple-darwin
+            os: macos-latest
+          - target: x86_64-apple-darwin
+            os: macos-15-intel
+          - target: x86_64-pc-windows-msvc
+            os: windows-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - name: Build web
+        working-directory: web
+        run: npm ci && npm run build
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          toolchain: stable
+      - name: Verify native target
+        shell: bash
+        env:
+          TARGET: ${{ matrix.target }}
+        run: |
+          host=$(rustc -vV | sed -n 's/^host: //p' | tr -d '\r')
+          if [ "$host" != "$TARGET" ]; then
+            echo "::error::Host $host does not match expected target $TARGET"
+            exit 1
+          fi
+      - name: Build Rust binary
+        run: cargo build --release --locked
+      - name: Package (Unix)
+        if: runner.os != 'Windows'
+        shell: bash
+        env:
+          VERSION: ${{ needs.guard.outputs.version }}
+          TARGET: ${{ matrix.target }}
+        run: |
+          NAME="gribovik-${VERSION}-${TARGET}"
+          mkdir -p dist
+          tar -czf "dist/${NAME}.tar.gz" -C target/release gribovik
+      - name: Package (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        env:
+          VERSION: ${{ needs.guard.outputs.version }}
+          TARGET: ${{ matrix.target }}
+        run: |
+          $env:NAME = "gribovik-$env:VERSION-$env:TARGET"
+          New-Item -ItemType Directory -Force dist
+          Compress-Archive -Path target/release/gribovik.exe -DestinationPath "dist/$env:NAME.zip"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: gribovik-${{ matrix.target }}
+          path: dist/*
+          if-no-files-found: error
+
+  release:
+    needs: [guard, build]
+    if: github.event_name == 'push' && github.ref_type == 'tag' && !github.event.deleted
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/download-artifact@v8
+        with:
+          path: dist
+          pattern: gribovik-*
+          merge-multiple: true
+      - name: Publish Release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+          GH_REPO: ${{ github.repository }}
+          GITHUB_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          count=$(find dist -maxdepth 1 -type f | wc -l)
+          if [ "$count" -ne 5 ]; then
+            echo "::error::Expected 5 files in dist, found $count"
+            exit 1
+          fi
+          
+          if ! git ls-remote --tags origin "refs/tags/$TAG" "refs/tags/${TAG}^{}" | grep -q "$GITHUB_SHA"; then
+            echo "::error::Remote tag $TAG no longer points to event SHA $GITHUB_SHA"
+            exit 1
+          fi
+
+          gh release create "$TAG" --title "$TAG" --generate-notes --verify-tag dist/*
