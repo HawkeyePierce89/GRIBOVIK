@@ -49,8 +49,10 @@ pub fn write(assets: &Assets, snapshot: &GraphSnapshot, path: &Path) -> Result<(
     let embedded = embed_snapshot(&page, snapshot)?;
 
     if let Some(parent) = path.parent() {
-        std::fs::create_dir_all(parent)
-            .with_context(|| format!("failed to create directories for {}", path.display()))?;
+        if !parent.as_os_str().is_empty() {
+            std::fs::create_dir_all(parent)
+                .with_context(|| format!("failed to create directories for {}", path.display()))?;
+        }
     }
 
     std::fs::write(path, embedded)
