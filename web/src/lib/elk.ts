@@ -4,6 +4,7 @@ let failWorker: (error: Error) => void;
 const failed = new Promise<never>((_, reject) => {
   failWorker = reject;
 });
+failed.catch(() => {});
 
 export function workerFailure(): Promise<never> {
   return failed;

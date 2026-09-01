@@ -16,7 +16,11 @@ use crate::server::assets::Assets;
 pub fn embed_snapshot(page: &str, snapshot: &GraphSnapshot) -> Result<String> {
     let json = serde_json::to_string(snapshot).context("failed to serialize snapshot")?;
     // Escape '<' to prevent XSS and </script> breakout.
-    let escaped_json = json.replace("<", "\\u003c");
+    // Also escape U+2028 and U+2029 which break JS string literals.
+    let escaped_json = json
+        .replace("<", "\\u003c")
+        .replace("\u{2028}", "\\u2028")
+        .replace("\u{2029}", "\\u2029");
 
     let script = format!(
         "<script id=\"gribovik-snapshot\">window.__GRIBOVIK_SNAPSHOT__ = {};</script>",
@@ -43,6 +47,12 @@ pub fn write(assets: &Assets, snapshot: &GraphSnapshot, path: &Path) -> Result<(
     let page = String::from_utf8(page_bytes).context("export.html is not valid UTF-8")?;
 
     let embedded = embed_snapshot(&page, snapshot)?;
+
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent)
+            .with_context(|| format!("failed to create directories for {}", path.display()))?;
+    }
+
     std::fs::write(path, embedded)
         .with_context(|| format!("failed to write export to {}", path.display()))?;
 
