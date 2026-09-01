@@ -118,6 +118,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ github.ref_name }}
+          GH_REPO: ${{ github.repository }}
         run: |
           set -euo pipefail
           count=$(find dist -maxdepth 1 -type f | wc -l)
