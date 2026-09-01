@@ -1,0 +1,682 @@
+//! Call-edge resolution.
+//!
+//! The graph's arrows are a heuristic: we have bare callee names taken from a
+//! caller's body and a list of changed symbols, and no type information to
+//! match them with. Resolution is therefore proximity-based — a name is looked
+//! up in the caller's own file first, then in its directory, then in the whole
+//! graph — and a name that still matches several symbols in the tier that
+//! answered yields one `ambiguous` edge per candidate rather than a guess. The
+//! whole-graph tier is the exception: it answers only a name unique across the
+//! graph, because a repository-wide tie on a bare name carries no signal.
+//!
+//! Only changed symbols are candidates: a call into untouched code is not part
+//! of the review and produces no edge.
+
+use std::collections::HashMap;
+
+use crate::core::diff::Span;
+use crate::core::lang::{analyzer_for_extension, LanguageAnalyzer, Symbol};
+use crate::core::nodes::{carve, extension, occurrence_of, FileInput, FILE_KIND};
+use crate::core::snapshot::{ChangeKind, Confidence, Edge, Node};
+
+/// Resolve the calls between `nodes`, which must be the cards `build_nodes`
+/// produced for these same `files`.
+///
+/// Edges are emitted in caller order, then in the order the calls appear in the
+/// caller's body; `(from, to)` pairs are unique.
+pub fn build_edges(files: &[FileInput], nodes: &[Node]) -> Vec<Edge> {
+    let sources: Vec<Analyzed> = files.iter().filter_map(Analyzed::of).collect();
+    let by_path: HashMap<&str, &Analyzed> = sources
+        .iter()
+        .map(|analyzed| (analyzed.file.path.as_str(), analyzed))
+        .collect();
+
+    let callables: Vec<Callable> = nodes
+        .iter()
+        .filter(|node| node.kind != FILE_KIND)
+        .filter_map(|node| {
+            by_path
+                .get(node.file.as_str())
+                .and_then(|a| a.callable(node))
+        })
+        .collect();
+
+    // Bare name -> every changed symbol that answers to it, in node order.
+    let mut index: HashMap<&str, Vec<usize>> = HashMap::new();
+    for (i, callable) in callables.iter().enumerate() {
+        index.entry(callable.name).or_default().push(i);
+    }
+
+    let calls = calls_per_callable(&callables);
+
+    let mut edges = Vec::new();
+    for (caller_index, caller) in callables.iter().enumerate() {
+        for call in &calls[caller_index] {
+            let Some(candidates) = index.get(call.as_str()) else {
+                continue;
+            };
+            // A deleted body was written against the base revision, where an
+            // added symbol did not exist yet — and an added body cannot call
+            // something the head revision no longer has. Either arrow would
+            // describe no revision of the code, so those candidates are dropped
+            // before the proximity tiers run and a same-named symbol that did
+            // coexist can still win.
+            let candidates: Vec<usize> = candidates
+                .iter()
+                .copied()
+                .filter(|&i| coexisted(caller, &callables[i]))
+                .collect();
+            if candidates.is_empty() {
+                continue;
+            }
+            // A symbol calling itself says nothing about the graph. Dropping
+            // the self-edge before counting matters: a recursive call that also
+            // matches one sibling leaves exactly one real callee, and calling
+            // that ambiguous would draw a dashed edge over a certain one.
+            let winners: Vec<usize> = resolve(caller, &candidates, &callables)
+                .into_iter()
+                .filter(|&winner| callables[winner].node.id != caller.node.id)
+                .collect();
+            // A single candidate is the answer; several mean the name alone
+            // cannot decide, so the reviewer is shown all of them.
+            let confidence = if winners.len() == 1 {
+                Confidence::Certain
+            } else {
+                Confidence::Ambiguous
+            };
+            for &winner in &winners {
+                let callee = callables[winner].node;
+                edges.push(Edge {
+                    from: caller.node.id.clone(),
+                    to: callee.id.clone(),
+                    confidence,
+                });
+            }
+        }
+    }
+    dedup(edges)
+}
+
+/// Whether the two cards were ever present in the same revision, so a call
+/// between them could have existed.
+fn coexisted(caller: &Callable, callee: &Callable) -> bool {
+    !matches!(
+        (caller.node.change, callee.node.change),
+        (ChangeKind::Deleted, ChangeKind::Added) | (ChangeKind::Added, ChangeKind::Deleted)
+    )
+}
+
+/// The candidates that win the call, tried nearest-first: the caller's own
+/// file, then its directory, then the rest of the graph.
+///
+/// The caller itself stays in the running so that a recursive call resolves
+/// locally instead of falling through to an unrelated same-named symbol; the
+/// self-edge is dropped afterwards.
+///
+/// The last tier is deliberately stricter than the first two: proximity is the
+/// only evidence there is, and a bare name shared by several symbols scattered
+/// across the repository — `new`, `join`, `len` — is evidence of nothing. A
+/// same-file or same-directory tie still names a handful of neighbours the
+/// reviewer can judge, so those fan out as `ambiguous`; a repository-wide tie
+/// draws no arrow at all rather than a dozen wrong ones.
+fn resolve(caller: &Callable, candidates: &[usize], callables: &[Callable]) -> Vec<usize> {
+    let same_file: Vec<usize> = candidates
+        .iter()
+        .copied()
+        .filter(|&i| callables[i].node.file == caller.node.file)
+        .collect();
+    if !same_file.is_empty() {
+        return same_file;
+    }
+    let dir = directory(&caller.node.file);
+    let same_dir: Vec<usize> = candidates
+        .iter()
+        .copied()
+        .filter(|&i| directory(&callables[i].node.file) == dir)
+        .collect();
+    if !same_dir.is_empty() {
+        return same_dir;
+    }
+    match candidates {
+        [only] => vec![*only],
+        _ => Vec::new(),
+    }
+}
+
+/// The callee names each callable invokes, indexed like `callables`.
+///
+/// Callables sharing a file *and* a revision are asked together, so each of the
+/// two sides of a file is parsed and walked once no matter how many symbols it
+/// declares. Asking one span at a time is a parse and a full tree walk per
+/// card, which is quadratic in a file's symbol count and turns a single
+/// generated file with a few thousand functions into tens of seconds of silence
+/// before the server binds.
+///
+/// The grouping order does not reach the output: results are written back into
+/// per-callable slots, and edges are still emitted in caller order.
+fn calls_per_callable(callables: &[Callable]) -> Vec<Vec<String>> {
+    // Keyed by path and side, the same split `Analyzed::callable` makes: a
+    // deleted symbol is read from the base revision, everything else from the
+    // head, and the two revisions of a file are different sources.
+    let mut groups: HashMap<(&str, bool), Vec<usize>> = HashMap::new();
+    for (i, callable) in callables.iter().enumerate() {
+        let deleted = callable.node.change == ChangeKind::Deleted;
+        groups
+            .entry((callable.node.file.as_str(), deleted))
+            .or_default()
+            .push(i);
+    }
+
+    let mut calls = vec![Vec::new(); callables.len()];
+    for members in groups.into_values() {
+        let first = &callables[members[0]];
+        let spans: Vec<&Span> = members.iter().map(|&i| &callables[i].span).collect();
+        let found = first.analyzer.calls_in_spans(first.src, &spans);
+        for (&i, names) in members.iter().zip(found) {
+            calls[i] = names;
+        }
+    }
+    calls
+}
+
+/// Collapse repeated `(from, to)` pairs, keeping the first position and the
+/// strongest confidence seen for the pair.
+fn dedup(edges: Vec<Edge>) -> Vec<Edge> {
+    // Indexed rather than rescanned: an ordinary branch already produces a
+    // thousand edges, and a linear search per edge is half a million string
+    // comparisons for a step that decides nothing.
+    let mut seen: HashMap<(String, String), usize> = HashMap::new();
+    let mut out: Vec<Edge> = Vec::with_capacity(edges.len());
+    for edge in edges {
+        match seen.get(&(edge.from.clone(), edge.to.clone())) {
+            Some(&kept) => {
+                if edge.confidence == Confidence::Certain {
+                    out[kept].confidence = Confidence::Certain;
+                }
+            }
+            None => {
+                seen.insert((edge.from.clone(), edge.to.clone()), out.len());
+                out.push(edge);
+            }
+        }
+    }
+    out
+}
+
+/// The directory part of a repository-relative path, `""` at the root.
+fn directory(path: &str) -> &str {
+    match path.rfind(['/', '\\']) {
+        Some(slash) => &path[..slash],
+        None => "",
+    }
+}
+
+/// One changed file, parsed once, with each side's symbols kept in source order
+/// and indexed by qualified name.
+///
+/// The flat list is not redundant with the index: carving a symbol's span needs
+/// every other symbol in the file, not just the ones sharing its name.
+struct Analyzed<'a> {
+    file: &'a FileInput,
+    analyzer: Box<dyn LanguageAnalyzer>,
+    old: Side,
+    new: Side,
+}
+
+/// One revision of one file: its symbols, and where to find them by name.
+struct Side {
+    symbols: Vec<Symbol>,
+    /// Qualified name -> positions in `symbols`, in source order.
+    by_name: HashMap<String, Vec<usize>>,
+}
+
+impl<'a> Analyzed<'a> {
+    /// `None` for files no analyzer handles; those only ever produced a
+    /// file-level card, which takes no part in the call graph.
+    fn of(file: &'a FileInput) -> Option<Self> {
+        let analyzer = analyzer_for_extension(extension(&file.path))?;
+        Some(Self {
+            old: Side::of(analyzer.as_ref(), file.old.as_deref()),
+            new: Side::of(analyzer.as_ref(), file.new.as_deref()),
+            analyzer,
+            file,
+        })
+    }
+
+    /// Pair a card with the revision it should be read from: a deleted symbol
+    /// only exists in the base revision, everything else in the head.
+    ///
+    /// A qualified name can be declared more than once in a file, and the card
+    /// says which declaration it is only through its id — so the occurrence has
+    /// to be carried into the lookup. Resolving every `S::fmt` to the first one
+    /// would read the wrong body and draw an arrow the code does not contain.
+    fn callable<'s>(&'s self, node: &'s Node) -> Option<Callable<'s>> {
+        let (side, src) = match node.change {
+            ChangeKind::Deleted => (&self.old, self.file.old.as_deref()),
+            _ => (&self.new, self.file.new.as_deref()),
+        };
+        let position = *side.by_name.get(&node.name)?.get(occurrence_of(node))?;
+        let symbol = &side.symbols[position];
+        Some(Callable {
+            node,
+            name: symbol.name.as_str(),
+            // The carved span, matching the lines the card shows: a type whose
+            // range swallows its methods must not claim the calls their bodies
+            // make, or it fans out to callees no line of its own diff mentions.
+            span: carve(&side.symbols, position),
+            src: src.unwrap_or_default(),
+            analyzer: self.analyzer.as_ref(),
+        })
+    }
+}
+
+/// A card that can call and be called: a changed symbol, located in the
+/// revision its change kind points at.
+struct Callable<'a> {
+    node: &'a Node,
+    /// The bare name calls are matched against.
+    name: &'a str,
+    /// The lines this card owns: its symbol's range less anything nested.
+    span: Span,
+    src: &'a str,
+    analyzer: &'a dyn LanguageAnalyzer,
+}
+
+impl Side {
+    /// Index one side's symbols by qualified name, keeping every declaration in
+    /// source order rather than letting the first one win — the same indexing
+    /// node construction does, so the *n*-th card of a name lines up with the
+    /// *n*-th symbol here. An unparsable side simply has no symbols.
+    fn of(analyzer: &dyn LanguageAnalyzer, src: Option<&str>) -> Self {
+        let symbols = src
+            .and_then(|src| analyzer.symbols(src).ok())
+            .unwrap_or_default();
+        let mut by_name: HashMap<String, Vec<usize>> = HashMap::new();
+        for (position, symbol) in symbols.iter().enumerate() {
+            by_name
+                .entry(symbol.qualified_name.clone())
+                .or_default()
+                .push(position);
+        }
+        Self { symbols, by_name }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::core::nodes::build_nodes;
+
+    /// Every edge as `from -> to (confidence)`, in emission order.
+    fn edges_of(files: &[FileInput]) -> Vec<String> {
+        let (nodes, _) = build_nodes(files);
+        build_edges(files, &nodes).iter().map(render).collect()
+    }
+
+    fn render(edge: &Edge) -> String {
+        let confidence = match edge.confidence {
+            Confidence::Certain => "certain",
+            Confidence::Ambiguous => "ambiguous",
+        };
+        format!("{} -> {} ({confidence})", edge.from, edge.to)
+    }
+
+    fn rust_helper(body: &str) -> String {
+        format!("fn helper() -> u32 {{\n    {body}\n}}\n")
+    }
+
+    fn rust_caller() -> String {
+        "fn caller() -> u32 {\n    helper()\n}\n".to_string()
+    }
+
+    #[test]
+    fn a_call_resolves_within_the_file() {
+        let source = format!("{}\n{}", rust_helper("1"), rust_caller());
+        assert_eq!(
+            edges_of(&[FileInput::added("src/a.rs", source)]),
+            vec!["src/a.rs::caller -> src/a.rs::helper (certain)"]
+        );
+    }
+
+    /// Two `impl` blocks can declare the same `S::go`. The cards are told
+    /// apart by the `#n` suffix on their ids, and each one has to be read from
+    /// its own body: resolving both to the first declaration invents an arrow
+    /// for the twin and loses the one it really has.
+    #[test]
+    fn repeated_qualified_names_resolve_from_their_own_body() {
+        let source = "\
+impl S {
+    fn go(&self) {
+        alpha();
+    }
+}
+
+impl S {
+    fn go(&self) {
+        beta();
+    }
+}
+
+fn alpha() {}
+
+fn beta() {}
+";
+        assert_eq!(
+            edges_of(&[FileInput::added("src/s.rs", source)]),
+            vec![
+                "src/s.rs::S::go -> src/s.rs::alpha (certain)",
+                "src/s.rs::S::go#2 -> src/s.rs::beta (certain)",
+            ]
+        );
+    }
+
+    /// With nothing nearer to match, a name that is unique in the whole graph
+    /// is still good enough to draw a confident arrow.
+    #[test]
+    fn a_unique_name_resolves_across_directories() {
+        assert_eq!(
+            edges_of(&[
+                FileInput::added("src/one/a.rs", rust_helper("1")),
+                FileInput::added("src/two/b.rs", rust_caller()),
+            ]),
+            vec!["src/two/b.rs::caller -> src/one/a.rs::helper (certain)"]
+        );
+    }
+
+    #[test]
+    fn the_callers_own_file_wins_over_a_neighbouring_one() {
+        let source = format!("{}\n{}", rust_helper("1"), rust_caller());
+        assert_eq!(
+            edges_of(&[
+                FileInput::added("src/a.rs", source),
+                FileInput::added("src/b.rs", rust_helper("2")),
+            ]),
+            vec!["src/a.rs::caller -> src/a.rs::helper (certain)"]
+        );
+    }
+
+    #[test]
+    fn the_callers_own_directory_wins_over_a_distant_one() {
+        assert_eq!(
+            edges_of(&[
+                FileInput::added("src/far/other.rs", rust_helper("2")),
+                FileInput::added("src/app/util.rs", rust_helper("1")),
+                FileInput::added("src/app/main.rs", rust_caller()),
+            ]),
+            vec!["src/app/main.rs::caller -> src/app/util.rs::helper (certain)"]
+        );
+    }
+
+    /// Two candidates in the tier that answered cannot be told apart without
+    /// type information, so both are drawn and marked as guesses.
+    #[test]
+    fn an_undecidable_name_yields_one_ambiguous_edge_per_candidate() {
+        assert_eq!(
+            edges_of(&[
+                FileInput::added("src/app/util.rs", rust_helper("1")),
+                FileInput::added("src/app/other.rs", rust_helper("2")),
+                FileInput::added("src/app/main.rs", rust_caller()),
+            ]),
+            vec![
+                "src/app/main.rs::caller -> src/app/util.rs::helper (ambiguous)",
+                "src/app/main.rs::caller -> src/app/other.rs::helper (ambiguous)",
+            ]
+        );
+    }
+
+    /// The whole-graph tier answers a unique name only. Two same-named symbols
+    /// in unrelated directories is the shape `new`, `join` and `len` take in a
+    /// real repository, and drawing an arrow to each of them buries the edges
+    /// that mean something under a fan of guesses.
+    #[test]
+    fn a_name_shared_across_distant_directories_draws_no_edge() {
+        assert!(edges_of(&[
+            FileInput::added("src/x/a.rs", rust_helper("1")),
+            FileInput::added("src/y/b.rs", rust_helper("2")),
+            FileInput::added("src/app/main.rs", rust_caller()),
+        ])
+        .is_empty());
+    }
+
+    /// The graph only contains changed symbols; a call reaching into untouched
+    /// code has no card to point at.
+    #[test]
+    fn a_call_into_unchanged_code_produces_no_edge() {
+        let file = FileInput::modified(
+            "src/a.rs",
+            "fn helper() -> u32 {\n    1\n}\n\nfn caller() -> u32 {\n    0\n}\n",
+            "fn helper() -> u32 {\n    1\n}\n\nfn caller() -> u32 {\n    helper()\n}\n",
+        );
+        let (nodes, _) = build_nodes(std::slice::from_ref(&file));
+        assert_eq!(nodes.len(), 1, "only `caller` changed");
+        assert!(edges_of(&[file]).is_empty());
+    }
+
+    #[test]
+    fn a_symbol_calling_itself_gets_no_edge() {
+        let source = "fn walk(n: u32) -> u32 {\n    if n == 0 { 0 } else { walk(n - 1) }\n}\n";
+        assert!(edges_of(&[FileInput::added("src/a.rs", source)]).is_empty());
+    }
+
+    /// Recursion keeps the local symbol from being confused with a same-named
+    /// one elsewhere: the self-edge is dropped, not redirected.
+    #[test]
+    fn recursion_does_not_fall_through_to_a_distant_namesake() {
+        assert_eq!(
+            edges_of(&[
+                FileInput::added("src/a.rs", "fn walk(n: u32) -> u32 {\n    walk(n - 1)\n}\n"),
+                FileInput::added("src/b.rs", "fn walk() {}\n"),
+            ]),
+            Vec::<String>::new()
+        );
+    }
+
+    /// A method reached as `Type::method` is indexed under its bare name, so a
+    /// qualified call finds it.
+    #[test]
+    fn a_qualified_call_matches_the_bare_method_name() {
+        let source = "\
+struct Counter {
+    hits: u32,
+}
+
+impl Counter {
+    fn new() -> Self {
+        Counter { hits: 0 }
+    }
+}
+
+fn start() -> Counter {
+    Counter::new()
+}
+";
+        assert_eq!(
+            edges_of(&[FileInput::added("src/a.rs", source)]),
+            vec![
+                // `Counter { hits: 0 }` is a use of the struct itself.
+                "src/a.rs::Counter::new -> src/a.rs::Counter (certain)",
+                // `Counter::new()` names only its final segment, so the call
+                // points at the method and not at the type.
+                "src/a.rs::start -> src/a.rs::Counter::new (certain)",
+            ]
+        );
+    }
+
+    #[test]
+    fn a_method_call_matches_the_receivers_method() {
+        let source = "\
+struct Counter;
+
+impl Counter {
+    fn bump(&self) {}
+}
+
+fn run(counter: &Counter) {
+    counter.bump();
+}
+";
+        assert_eq!(
+            edges_of(&[FileInput::added("src/a.rs", source)]),
+            vec!["src/a.rs::run -> src/a.rs::Counter::bump (certain)"]
+        );
+    }
+
+    /// A deleted symbol no longer exists in the head revision, so its calls are
+    /// read from the base one.
+    #[test]
+    fn a_deleted_caller_is_read_from_the_base_revision() {
+        let file = FileInput::modified(
+            "src/a.rs",
+            "fn helper() -> u32 {\n    1\n}\n\nfn gone() -> u32 {\n    helper()\n}\n",
+            "fn helper() -> u32 {\n    2\n}\n",
+        );
+        assert_eq!(
+            edges_of(&[file]),
+            vec!["src/a.rs::gone -> src/a.rs::helper (certain)"]
+        );
+    }
+
+    /// File-level cards are diffs, not symbols: they neither call nor are
+    /// called, however much code their lines contain.
+    #[test]
+    fn file_level_cards_take_no_part_in_the_graph() {
+        let files = [
+            FileInput::added("src/a.rs", rust_helper("1")),
+            // Unparsable, so `src/b.rs` degrades to a single file-level card.
+            FileInput::added("src/b.rs", "fn caller( {\n    helper()\n}\n"),
+        ];
+        let (nodes, warnings) = build_nodes(&files);
+        assert_eq!(warnings.len(), 1);
+        assert!(nodes.iter().any(|node| node.kind == FILE_KIND));
+        assert!(edges_of(&files).is_empty());
+    }
+
+    /// A type's range contains its methods', but its *card* does not: the
+    /// carved span leaves the class node holding its declaration lines alone.
+    /// Edges follow the same carving, so the call inside `bump` is `bump`'s
+    /// arrow and not also the class's — an arrow out of a card whose diff never
+    /// mentions the callee is one the reviewer cannot check, and on a class with
+    /// twenty methods it draws twenty duplicates over the real ones.
+    #[test]
+    fn a_call_in_a_method_is_not_also_an_edge_out_of_its_class() {
+        let source = "\
+function helper(): number {
+  return 1;
+}
+
+export class Counter {
+  bump(): number {
+    return helper();
+  }
+}
+";
+        assert_eq!(
+            edges_of(&[FileInput::added("web/counter.ts", source)]),
+            vec!["web/counter.ts::Counter.bump -> web/counter.ts::helper (certain)"]
+        );
+    }
+
+    #[test]
+    fn swift_calls_resolve_across_files() {
+        assert_eq!(
+            edges_of(&[
+                FileInput::added("App/Util.swift", "func helper() -> Int {\n    1\n}\n"),
+                FileInput::added(
+                    "App/Main.swift",
+                    "func run() -> Int {\n    return helper()\n}\n"
+                ),
+            ]),
+            vec!["App/Main.swift::run -> App/Util.swift::helper (certain)"]
+        );
+    }
+
+    #[test]
+    fn a_repeated_pair_is_kept_once_at_its_strongest_confidence() {
+        let pair = |confidence| Edge {
+            from: "a".to_string(),
+            to: "b".to_string(),
+            confidence,
+        };
+        let other = Edge {
+            from: "a".to_string(),
+            to: "c".to_string(),
+            confidence: Confidence::Ambiguous,
+        };
+        assert_eq!(
+            dedup(vec![
+                pair(Confidence::Ambiguous),
+                other.clone(),
+                pair(Confidence::Certain),
+            ]),
+            // The pair keeps its first position and gains the better verdict.
+            vec![pair(Confidence::Certain), other.clone()]
+        );
+        assert_eq!(
+            dedup(vec![pair(Confidence::Certain), pair(Confidence::Ambiguous)]),
+            vec![pair(Confidence::Certain)]
+        );
+    }
+
+    #[test]
+    fn directories_are_the_path_up_to_the_last_separator() {
+        assert_eq!(directory("src/app/main.rs"), "src/app");
+        assert_eq!(directory("main.rs"), "");
+        assert_eq!(directory("src\\app\\main.rs"), "src\\app");
+    }
+
+    /// A deleted body was written against the base revision, where an added
+    /// symbol did not exist yet. Resolving across that boundary drew a
+    /// `certain` arrow describing no revision of the code.
+    #[test]
+    fn a_deleted_caller_never_points_at_an_added_callee() {
+        let file = FileInput::modified(
+            "src/c.rs",
+            "fn gone() { target(); }\n",
+            "fn target() { keep(); }\nfn keep() {}\n",
+        );
+        assert!(
+            !edges_of(&[file])
+                .iter()
+                .any(|edge| edge.starts_with("src/c.rs::gone ->")),
+            "a deleted symbol resolved into the head revision"
+        );
+    }
+
+    /// The mirror case: an added body cannot call something the head revision
+    /// no longer has.
+    #[test]
+    fn an_added_caller_never_points_at_a_deleted_callee() {
+        let file =
+            FileInput::modified("src/c.rs", "fn target() {}\n", "fn fresh() { target(); }\n");
+        assert!(edges_of(&[file]).is_empty());
+    }
+
+    /// Dropping the impossible candidates must not drop the possible ones: a
+    /// same-named symbol that did coexist still wins the call.
+    #[test]
+    fn a_coexisting_callee_still_wins_over_a_dropped_one() {
+        let files = [
+            FileInput::modified(
+                "src/c.rs",
+                "fn gone() { target(); }\n",
+                "fn target() { done(); }\nfn done() {}\n",
+            ),
+            FileInput::modified(
+                "src/other.rs",
+                "fn target() { old(); }\nfn old() {}\n",
+                "fn target() { new_one(); }\nfn new_one() {}\n",
+            ),
+        ];
+        assert!(
+            edges_of(&files)
+                .contains(&"src/c.rs::gone -> src/other.rs::target (certain)".to_string()),
+            "{:?}",
+            edges_of(&files)
+        );
+    }
+
+    #[test]
+    fn an_empty_graph_has_no_edges() {
+        assert!(build_edges(&[], &[]).is_empty());
+    }
+}
