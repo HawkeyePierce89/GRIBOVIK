@@ -118,15 +118,15 @@ one paragraph in `CLAUDE.md`.
 
 ### Task 4: Verify acceptance criteria
 
-- [ ] `cargo test` — passes.
-- [ ] `cargo clippy --all-targets -- -D warnings` — clean.
-- [ ] `cargo fmt --check` — clean.
-- [ ] `cd web && npm test && npm run typecheck` — passes (unchanged; run to
+- [x] `cargo test` — passes.
+- [x] `cargo clippy --all-targets -- -D warnings` — clean.
+- [x] `cargo fmt --check` — clean.
+- [x] `cd web && npm test && npm run typecheck` — passes (unchanged; run to
       confirm nothing regressed).
-- [ ] `actionlint .github/workflows/pr-graph.yml` — passes.
-- [ ] Re-run the Task 1 local download repro once more end to end and confirm
+- [x] `actionlint .github/workflows/pr-graph.yml` — passes.
+- [x] Re-run the Task 1 local download repro once more end to end and confirm
       it exits 0.
-- [ ] Confirm `git diff --stat` touches only `.github/workflows/pr-graph.yml`,
+- [x] Confirm `git diff --stat` touches only `.github/workflows/pr-graph.yml`,
       `src/export.rs`, `tests/export_html.rs` and `CLAUDE.md` — no
       `release.yml`, no frontend files, no serve-mode code.
 
