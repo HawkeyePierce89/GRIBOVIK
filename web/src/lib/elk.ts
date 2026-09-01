@@ -1,6 +1,9 @@
 import ELK from "elkjs/lib/elk.bundled.js";
 
-let failed: Promise<never> = new Promise(() => {});
+let failWorker: (error: Error) => void;
+const failed = new Promise<never>((_, reject) => {
+  failWorker = reject;
+});
 
 export function workerFailure(): Promise<never> {
   return failed;
@@ -15,11 +18,9 @@ export const elk = new ELK(
             new URL("elkjs/lib/elk-worker.min.js", import.meta.url),
             { type: "module" },
           );
-          failed = new Promise((_, reject) => {
-            worker.addEventListener("error", (event) =>
-              reject(new Error(`layout worker failed: ${event.message}`)),
-            );
-          });
+          worker.addEventListener("error", (event) =>
+            failWorker(new Error(`layout worker failed: ${event.message}`)),
+          );
           return worker;
         },
       },
