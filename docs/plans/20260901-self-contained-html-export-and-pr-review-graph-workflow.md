@@ -127,27 +127,27 @@ writes the result. Serve mode is untouched.
 - Create: `src/export.rs`
 - Modify: `src/lib.rs`, `src/server/assets.rs`, `build.rs`
 
-- [ ] make `Assets::read` public so a non-server caller can pull one file out
+- [x] make `Assets::read` public so a non-server caller can pull one file out
       of either the embedded tree or the `--assets` directory
-- [ ] create `src/export.rs` with the module doc explaining why the page is
+- [x] create `src/export.rs` with the module doc explaining why the page is
       built by Vite and only *injected* here
-- [ ] TDD the pure function
+- [x] TDD the pure function
       `embed_snapshot(page: &str, snapshot: &GraphSnapshot) -> Result<String>`:
       serialize, replace every `<` with `\u003c`, insert
       `<script id="gribovik-snapshot">window.__GRIBOVIK_SNAPSHOT__ = …;</script>`
       immediately before `</head>`; error when the anchor is absent
-- [ ] add the shell half: `write(assets: &Assets, snapshot, path: &Path)` —
+- [x] add the shell half: `write(assets: &Assets, snapshot, path: &Path)` —
       read `export.html` (error naming the assets directory when it is
       missing), embed, `fs::write` with `.context(...)` naming the path
-- [ ] register `pub mod export;` in `src/lib.rs`
-- [ ] extend `build.rs` to require `web/dist/export.html` alongside
+- [x] register `pub mod export;` in `src/lib.rs`
+- [x] extend `build.rs` to require `web/dist/export.html` alongside
       `index.html`, with the same one-line instruction in the panic message
-- [ ] unit tests in `src/export.rs`: a diff line containing `</script>`
+- [x] unit tests in `src/export.rs`: a diff line containing `</script>`
       round-trips (extract the injected JSON, `serde_json::from_str` back to a
       `GraphSnapshot`, assert equality) and the output contains no literal
       `</script>` before the tag we emit; a page without `</head>` is an error;
       the embedded `export.html` asset contains the `</head>` anchor
-- [ ] run `cargo test`, `cargo clippy --all-targets -- -D warnings`,
+- [x] run `cargo test`, `cargo clippy --all-targets -- -D warnings`,
       `cargo fmt --check` — must pass
 
 ### Task 3: The `--export` CLI mode

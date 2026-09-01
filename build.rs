@@ -19,4 +19,12 @@ fn main() {
         );
         panic!("missing frontend build: web/dist/index.html — run `just build-web` first");
     }
+
+    if !Path::new("web/dist/export.html").exists() {
+        println!(
+            "cargo:warning=web/dist/export.html is missing — run `just build-web` first \
+             (or `npm ci && npm run build` in web/)"
+        );
+        panic!("missing frontend build: web/dist/export.html — run `just build-web` first");
+    }
 }
