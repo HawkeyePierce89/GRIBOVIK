@@ -128,6 +128,17 @@ fn collect(container: Node, src: &str, prefix: &str, out: &mut Vec<Symbol>) {
                 push_named(statement, declaration, src, prefix, "type_alias", out);
             }
             "enum_declaration" => push_named(statement, declaration, src, prefix, "enum", out),
+            // `namespace Api {…}`, `module Api {…}`, `declare module "x" {…}`.
+            // Like a Rust `mod`, the block is a namespace rather than a symbol:
+            // it qualifies what it holds and is descended into, so an edit to a
+            // function inside it is that function's card and not one verdict on
+            // the whole block.
+            "internal_module" | "module" => {
+                if let Some(body) = declaration.child_by_field_name("body") {
+                    let name = module_name(declaration, src);
+                    collect(body, src, &join(prefix, &name), out);
+                }
+            }
             "lexical_declaration" | "variable_declaration" => {
                 collect_bindings(statement, declaration, src, prefix, out);
             }
@@ -181,6 +192,17 @@ fn collect_bindings(
         let name = lang::field_text(declarator, "name", src).to_string();
         push_symbol(node, prefix, "function", &name, out);
     }
+}
+
+/// The qualifier a namespace or module block contributes.
+///
+/// `declare module "node:fs"` names itself with a string literal, quotes and
+/// all; they would end up inside every node id built under it, so they come
+/// off here.
+fn module_name(declaration: Node, src: &str) -> String {
+    lang::field_text(declaration, "name", src)
+        .trim_matches(|c| c == '"' || c == '\'')
+        .to_string()
 }
 
 /// Peel the `export …` / `declare …` wrappers off a statement, returning the
@@ -280,6 +302,7 @@ mod tests {
         include_str!("../../../tests/fixtures/ts/deleted_interface/after.ts");
     const COMPONENT_BEFORE: &str = include_str!("../../../tests/fixtures/ts/component/before.tsx");
     const COMPONENT_AFTER: &str = include_str!("../../../tests/fixtures/ts/component/after.tsx");
+    const NAMESPACE_AFTER: &str = include_str!("../../../tests/fixtures/ts/namespace/after.ts");
 
     fn analyzer(dialect: Dialect) -> TsJsAnalyzer {
         TsJsAnalyzer::new(dialect)
@@ -318,6 +341,30 @@ mod tests {
 
     fn calls(src: &str, start: u32, end: u32) -> Vec<String> {
         calls_with(Dialect::TypeScript, src, start, end)
+    }
+
+    /// A namespace qualifies what it holds without becoming a card of its own,
+    /// so an edit inside one is the member's verdict rather than the block's.
+    #[test]
+    fn namespace_members_are_symbols_qualified_by_the_block() {
+        assert_eq!(
+            outline(NAMESPACE_AFTER),
+            vec![
+                row("fetchUser", "Api.fetchUser", "function", 2, 4),
+                row("Client", "Api.Client", "class", 6, 10),
+                row("send", "Api.Client.send", "method", 7, 9),
+                // `declare module "legacy"` qualifies by the module's name with
+                // the quotes stripped, not by `"legacy"`.
+                row("shim", "legacy.shim", "function", 14, 14),
+                row("main", "main", "function", 17, 19),
+            ]
+        );
+    }
+
+    /// A call inside a namespace still resolves, so its members can carry edges.
+    #[test]
+    fn namespace_member_calls_are_extracted() {
+        assert_eq!(calls(NAMESPACE_AFTER, 2, 4), vec!["normalize".to_string()]);
     }
 
     #[test]

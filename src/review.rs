@@ -6,7 +6,9 @@
 //!
 //! Reading is deliberately forgiving: a missing or unreadable file yields an
 //! empty state rather than an error, because losing a few approvals is a much
-//! smaller problem than refusing to start a review at all.
+//! smaller problem than refusing to start a review at all. An unreadable one is
+//! moved aside first and reported to the reviewer, so "forgiving" does not turn
+//! into "overwritten by the first click"; see [`load`].
 
 use std::collections::BTreeMap;
 use std::ffi::OsStr;
@@ -212,39 +214,84 @@ pub fn stamp(state: &mut ReviewState, snapshot: &GraphSnapshot) {
     }
 }
 
-/// Read the state at `path`, falling back to an empty state.
+/// Read the state at `path`, falling back to an empty state and a warning.
 ///
 /// A missing file is the normal first-run case and says nothing. Every other
-/// failure — no permission, not valid UTF-8, corrupt JSON — is reported on
-/// stderr and then ignored, so a hand-edited or truncated file costs the
-/// reviewer their marks but not the session. The report is the whole point:
-/// the first click of the new session writes the empty state back over the
-/// file, so a silent fallback would turn "this file is unreadable today" into
-/// "this review is gone", with nothing on the terminal to say so.
-pub fn load(path: impl AsRef<Path>) -> ReviewState {
+/// failure — no permission, not valid UTF-8, corrupt JSON — costs the reviewer
+/// their marks but not the session, so the file is moved aside and the warning
+/// is handed back for [`crate::core::snapshot::Meta::warnings`]. Both halves
+/// matter: the first click of the new session writes the empty state back over
+/// this path, so without the move "unreadable today" becomes "gone", and the
+/// browser opens over the terminal, so a line on stderr is not where the
+/// reviewer would read it.
+pub fn load(path: impl AsRef<Path>) -> (ReviewState, Option<String>) {
     let path = path.as_ref();
     let text = match fs::read_to_string(path) {
         Ok(text) => text,
-        Err(err) if err.kind() == std::io::ErrorKind::NotFound => return ReviewState::new(),
-        Err(err) => {
-            eprintln!(
-                "warning: ignoring unreadable review state {}: {err}",
-                path.display()
-            );
-            return ReviewState::new();
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => {
+            return (ReviewState::new(), None)
         }
+        Err(err) => return (ReviewState::new(), Some(set_aside(path, &err.to_string()))),
     };
     match serde_json::from_str(&text) {
-        Ok(state) => state,
-        Err(err) => {
-            eprintln!(
-                "warning: ignoring unreadable review state {}: {err}",
-                path.display()
-            );
-            ReviewState::new()
-        }
+        Ok(state) => (state, None),
+        Err(err) => (ReviewState::new(), Some(set_aside(path, &err.to_string()))),
     }
 }
+
+/// Move an unreadable state file out of the way of the session about to
+/// overwrite it, and describe what happened to it.
+///
+/// A rename can fail too — a read-only git directory — and there is nothing
+/// left to try if it does; the warning then says the marks are about to be
+/// lost rather than where they went.
+fn set_aside(path: &Path, cause: &str) -> String {
+    let Some(target) = free_backup_path(path) else {
+        return format!(
+            "ignoring unreadable review state {} ({cause}); it will be overwritten by the first \
+             verdict of this session",
+            path.display()
+        );
+    };
+    match fs::rename(path, &target) {
+        Ok(()) => format!(
+            "review state {} was unreadable ({cause}); it was moved to {} and this session starts \
+             from an empty review",
+            path.display(),
+            target.display()
+        ),
+        Err(err) => format!(
+            "ignoring unreadable review state {} ({cause}); it could not be moved aside ({err}) \
+             and will be overwritten by the first verdict of this session",
+            path.display()
+        ),
+    }
+}
+
+/// The first free `<name>.corrupt`, `<name>.corrupt.2`, … beside `path`.
+///
+/// Never an existing path: the file being moved aside is the only copy of those
+/// verdicts, and a second unreadable session would otherwise land on the first
+/// one's rescue.
+fn free_backup_path(path: &Path) -> Option<PathBuf> {
+    let name = path.file_name()?;
+    let dir = path.parent()?;
+    (1..=BACKUP_ATTEMPTS)
+        .map(|n| {
+            let mut candidate = name.to_os_string();
+            candidate.push(if n == 1 {
+                ".corrupt".to_string()
+            } else {
+                format!(".corrupt.{n}")
+            });
+            dir.join(candidate)
+        })
+        .find(|candidate| !candidate.exists())
+}
+
+/// How many `.corrupt` siblings to try before giving up on the rescue. Past
+/// this the directory is telling us something other than "one bad write".
+const BACKUP_ATTEMPTS: u32 = 16;
 
 /// Write `state` to `path`, creating the directory if needed.
 ///
@@ -362,7 +409,7 @@ mod tests {
         save(&path, &sample()).unwrap();
 
         assert!(path.exists(), "save should create the state file");
-        assert_eq!(load(&path), sample());
+        assert_eq!(load(&path), (sample(), None));
     }
 
     #[test]
@@ -419,15 +466,15 @@ mod tests {
         second.insert("src/c.rs::gamma".to_string(), NodeReview::default());
         save(&path, &second).unwrap();
 
-        assert_eq!(load(&path), second);
+        assert_eq!(load(&path).0, second);
     }
 
     #[test]
-    fn load_of_a_missing_file_is_empty() {
+    fn load_of_a_missing_file_is_empty_and_silent() {
         let dir = TempDir::new().unwrap();
         let path = state_path(dir.path(), "base", "head");
 
-        assert_eq!(load(&path), ReviewState::new());
+        assert_eq!(load(&path), (ReviewState::new(), None));
     }
 
     #[test]
@@ -437,7 +484,9 @@ mod tests {
         fs::create_dir_all(path.parent().unwrap()).unwrap();
         fs::write(&path, "{ this is not json").unwrap();
 
-        assert_eq!(load(&path), ReviewState::new());
+        let (state, warning) = load(&path);
+        assert_eq!(state, ReviewState::new());
+        assert!(warning.is_some(), "corrupt json must be reported");
     }
 
     /// A file that is not UTF-8 fails in `read_to_string`, not in serde, so it
@@ -450,7 +499,63 @@ mod tests {
         fs::create_dir_all(path.parent().unwrap()).unwrap();
         fs::write(&path, [0x7b, 0xff, 0xfe, 0x7d]).unwrap();
 
-        assert_eq!(load(&path), ReviewState::new());
+        let (state, warning) = load(&path);
+        assert_eq!(state, ReviewState::new());
+        assert!(warning.is_some(), "a non-UTF-8 file must be reported");
+    }
+
+    /// The point of the move: an unreadable file is the only copy of those
+    /// verdicts, and the first click of the new session writes an empty state
+    /// over the path it was on.
+    #[test]
+    fn a_corrupt_state_file_is_moved_aside_before_it_can_be_overwritten() {
+        let dir = TempDir::new().unwrap();
+        let path = state_path(dir.path(), "base", "head");
+        fs::create_dir_all(path.parent().unwrap()).unwrap();
+        let salvageable = r#"{"src/a.rs::alpha": {"status": "approved", "comme"#;
+        fs::write(&path, salvageable).unwrap();
+
+        let (state, warning) = load(&path);
+        assert_eq!(state, ReviewState::new());
+        assert!(
+            !path.exists(),
+            "the unreadable file should be out of the way"
+        );
+
+        let backup = path.with_file_name("base..head.json.corrupt");
+        assert_eq!(fs::read_to_string(&backup).unwrap(), salvageable);
+        assert!(
+            warning
+                .expect("a warning")
+                .contains(&backup.display().to_string()),
+            "the warning should say where the marks went"
+        );
+
+        // And the session that follows owns the original path outright.
+        save(&path, &sample()).unwrap();
+        assert_eq!(load(&path), (sample(), None));
+    }
+
+    /// A second bad session must not rescue itself onto the first one's rescue.
+    #[test]
+    fn a_second_corrupt_state_file_gets_its_own_backup() {
+        let dir = TempDir::new().unwrap();
+        let path = state_path(dir.path(), "base", "head");
+        fs::create_dir_all(path.parent().unwrap()).unwrap();
+
+        fs::write(&path, "first").unwrap();
+        load(&path);
+        fs::write(&path, "second").unwrap();
+        load(&path);
+
+        assert_eq!(
+            fs::read_to_string(path.with_file_name("base..head.json.corrupt")).unwrap(),
+            "first"
+        );
+        assert_eq!(
+            fs::read_to_string(path.with_file_name("base..head.json.corrupt.2")).unwrap(),
+            "second"
+        );
     }
 
     #[test]
@@ -459,7 +564,9 @@ mod tests {
         let path = state_path(dir.path(), "base", "head");
         fs::create_dir_all(&path).unwrap();
 
-        assert_eq!(load(&path), ReviewState::new());
+        let (state, warning) = load(&path);
+        assert_eq!(state, ReviewState::new());
+        assert!(warning.is_some(), "a directory in the way must be reported");
     }
 
     /// Two saves racing inside one process used to stage into the same temp
@@ -481,7 +588,7 @@ mod tests {
         });
 
         // Whoever wrote last, the file is a whole state and not a fragment.
-        assert_eq!(load(&path), sample());
+        assert_eq!(load(&path).0, sample());
         // And no staging file survived the race.
         let leftovers: Vec<_> = fs::read_dir(path.parent().unwrap())
             .unwrap()

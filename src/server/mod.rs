@@ -467,7 +467,7 @@ mod tests {
         )
         .await;
 
-        assert_eq!(review::load(&path), stamped());
+        assert_eq!(review::load(&path).0, stamped());
     }
 
     /// A 500 says the verdict is not on disk, and `GET /api/state` has to keep
@@ -529,7 +529,7 @@ mod tests {
             body_json::<ReviewState>(get(&app, "/api/state").await).await,
             ReviewState::new()
         );
-        assert_eq!(review::load(&path), ReviewState::new());
+        assert_eq!(review::load(&path).0, ReviewState::new());
     }
 
     #[tokio::test]

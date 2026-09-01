@@ -79,7 +79,7 @@ pub fn prepare(repo: &Repo, args: &Args) -> Result<Session> {
     }
 
     let analysis = pipeline::analyze(repo, args.base.as_deref(), args.head.as_deref())?;
-    let snapshot = match analysis {
+    let mut snapshot = match analysis {
         Analysis::NoChanges {
             base,
             head,
@@ -110,7 +110,14 @@ pub fn prepare(repo: &Repo, args: &Args) -> Result<Session> {
     // keyed by branch, so it survives new commits on that branch, and a symbol
     // those commits rewrote must come back as pending rather than wearing the
     // approval its previous version earned.
-    let state = review::reconcile(review::load(&state_path), &snapshot);
+    let (saved, warning) = review::load(&state_path);
+    let state = review::reconcile(saved, &snapshot);
+    // An unreadable state file is the reviewer's problem, not the terminal's:
+    // the browser opens over the terminal, so the loss of a review reaches them
+    // through the same banner as the analysis warnings or not at all.
+    if let Some(warning) = warning {
+        snapshot.meta.warnings.push(warning);
+    }
     let assets = Assets::new(args.assets.clone());
 
     Ok(Session::Serve {

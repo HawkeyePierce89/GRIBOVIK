@@ -131,32 +131,38 @@ stderr with exit code 1.
 Statuses and comments are written to:
 
 ```
-<git-dir>/gribovik/<merge-base>..<head>.json
+<git-dir>/gribovik/<base>..<head>.json
 ```
 
 `<git-dir>` is whatever `git rev-parse --git-common-dir` reports — usually
 `<repo>/.git`, but a linked worktree or a submodule keeps its data elsewhere,
 and every worktree of a repository shares one review.
 
-The base component is the **resolved merge base**, not the revision you typed.
-The head component is the revision you typed, except that a bare `HEAD` — the
-default — is expanded to the branch you are on, or to the short commit if the
-checkout is detached. Two branches cut from the same commit share a merge base,
-so without that expansion they would share a review file and each would open on
-the other's verdicts. `gribovik origin/master` on `feature/x` therefore writes
-something like `9f3c1e…a2..feature%2Fx.json`; anything outside
-`[A-Za-z0-9._-]` is percent-encoded, so two branch names can never land on one
-file.
+Both halves are **names**, not commits: the base is the revision you typed (or
+the `origin/master` / `origin/main` that was picked for you), and the head is
+the revision you typed, except that a bare `HEAD` — the default — is expanded
+to the branch you are on, or to the short commit if the checkout is detached.
+`gribovik origin/master` on `feature/x` therefore writes
+`origin%2Fmaster..feature%2Fx.json`; anything outside `[A-Za-z0-9._-]` is
+percent-encoded, so two branch names can never land on one file.
 
-One consequence is worth knowing: fetching new commits onto the base branch or
-rebasing moves the merge base, which starts a fresh review file — the old marks
-stay on disk under the old merge base but are no longer loaded.
+Naming it after the merge base instead would have been the obvious choice and
+is the wrong one: the merge base moves the moment you rebase or merge the base
+branch in, and a four-hundred-card review would be orphaned by a routine
+`git rebase`. Names do not move, so the review is found again — and what keeps
+that from replaying an approval over rewritten code is the fingerprint stored
+with each verdict. On every start, a card whose own diff still hashes the same
+keeps its status; a card whose code changed comes back as pending, keeping its
+comments.
 
 The file is JSON keyed by node id (`<file>::<qualified_name>`), written
 atomically, and stable across saves so it diffs cleanly if you ever open it.
 Because it lives inside the git directory it is never committed, is not shared
-with anyone else, and disappears with the clone. A missing or corrupt file is
-treated as an empty review rather than an error.
+with anyone else, and disappears with the clone. A missing file is the normal
+first run. An unreadable one — hand-edited, truncated by a power loss — is
+moved aside to `<name>.corrupt` and reported in the warnings banner, so the
+session starts empty without the first click overwriting whatever was still in
+there.
 
 Re-running GRIBOVIK on the same `base..head` picks the marks back up — except
 for the cards whose code changed in the meantime. Each entry records a digest of
