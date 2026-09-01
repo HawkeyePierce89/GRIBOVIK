@@ -133,18 +133,30 @@ pub(crate) fn end_line(node: Node) -> u32 {
 /// doc comment lands on the symbol rather than in the file-level catch-all.
 ///
 /// `prelude_kinds` names the sibling node kinds that count as part of the
-/// preamble; a blank line between them and the declaration ends the run.
+/// preamble; a blank line between them and the declaration ends the run, and so
+/// does a preamble node that shares its first line with whatever came before —
+/// the `// end` in `} // end` belongs to the symbol that brace closes, and
+/// swallowing it would put that line on two cards at once.
 pub(crate) fn leading_line(node: Node, prelude_kinds: &[&str]) -> u32 {
     let mut start = start_line(node);
     let mut current = node;
     while let Some(previous) = current.prev_sibling() {
-        if !prelude_kinds.contains(&previous.kind()) || end_line(previous) + 1 < start {
+        if !prelude_kinds.contains(&previous.kind())
+            || end_line(previous) + 1 < start
+            || !starts_its_own_line(previous)
+        {
             break;
         }
         start = start_line(previous);
         current = previous;
     }
     start
+}
+
+/// Whether nothing before `node` also occupies `node`'s first line.
+fn starts_its_own_line(node: Node) -> bool {
+    node.prev_sibling()
+        .is_none_or(|before| end_line(before) < start_line(node))
 }
 
 /// The source text a node spans.

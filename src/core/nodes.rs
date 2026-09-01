@@ -118,8 +118,11 @@ fn build_file(file: &FileInput, nodes: &mut Vec<Node>, warnings: &mut Vec<String
         .filter(|line| is_change(line) && !claimed.contains(&line_key(line)))
         // A blank line added or removed between two symbols is the one leftover
         // with nothing to review in it; carding it would put a file node on
-        // almost every file that gained a function.
-        .filter(|line| !line.text.trim().is_empty())
+        // almost every file that gained a function. The test is emptiness, not
+        // blankness: a line whose *indentation* changed still changed, and
+        // trimming it away made a file whose only out-of-symbol edit was
+        // whitespace disappear from the review with no card and no warning.
+        .filter(|line| !line.text.is_empty())
         .cloned()
         .collect();
 
@@ -161,7 +164,15 @@ fn symbol_cards(
             continue;
         }
         let diff = slice_diff(file_diff, Some(symbol.range()), None);
-        nodes.push(symbol_node(file, symbol, ChangeKind::Deleted, *nth, diff));
+        // The same guard the modified branch applies. Occurrences are paired
+        // positionally, so removing the *first* of two `impl S { fn fmt }`
+        // blocks marks the surviving one deleted: its span holds no changed
+        // line, and carding it asks for a verdict on a deletion the card does
+        // not show. The removed lines are still reviewed — they land on the
+        // occurrence they were paired with, and on the file card.
+        if diff.iter().any(is_change) {
+            nodes.push(symbol_node(file, symbol, ChangeKind::Deleted, *nth, diff));
+        }
     }
     for (symbol, nth) in new_symbols.iter().zip(&new_nth) {
         match old_occurrences.get(symbol.qualified_name.as_str(), *nth) {
@@ -811,6 +822,76 @@ mod tests {
             outline(&[file]),
             // The first `go` is untouched and produces no card at all.
             vec![row("src/s.rs::S::go#2", "method", "modified", "-5 +5")]
+        );
+    }
+
+    /// Positional pairing marks the *surviving* twin deleted when the first of
+    /// two same-named declarations is removed. That card's span holds no
+    /// changed line, and a "deleted" card showing nothing deleted is a verdict
+    /// the reviewer cannot give; the removed lines are reviewed on the cards
+    /// that do carry them.
+    #[test]
+    fn a_deleted_card_with_nothing_deleted_in_it_is_not_emitted() {
+        let file = FileInput::modified(
+            "src/s.rs",
+            "impl A for S {\n    fn go(&self) { alpha(); }\n}\n\
+             impl B for S {\n    fn go(&self) { beta(); }\n}\n",
+            "impl B for S {\n    fn go(&self) { beta(); }\n}\n",
+        );
+        let cards = outline(&[file]);
+        assert!(
+            !cards.iter().any(|card| card.contains("deleted")),
+            "an empty deleted card survived: {cards:?}"
+        );
+        assert!(
+            cards.iter().any(|card| card.contains("<file>")),
+            "the removed lines have to land somewhere: {cards:?}"
+        );
+    }
+
+    /// The blank-line exception is about *empty* leftovers. Trimming instead
+    /// dropped a line whose indentation changed, and a file whose only
+    /// out-of-symbol edit was whitespace vanished from the review entirely —
+    /// no card, no warning.
+    #[test]
+    fn a_whitespace_only_leftover_still_gets_a_file_card() {
+        let file = FileInput::modified(
+            "src/a.rs",
+            "use std::fmt;\n   \nfn keep() {}\n",
+            "use std::fmt;\n\nfn keep() {}\n",
+        );
+        assert_eq!(
+            outline(&[file]),
+            // The replacement line *is* empty, so only the removal is carded —
+            // which is the point: the change is no longer invisible.
+            vec![row("src/a.rs::<file>", FILE_KIND, "modified", "-2")]
+        );
+    }
+
+    /// A truly blank line between symbols is still not worth a card.
+    #[test]
+    fn an_added_blank_line_between_symbols_still_gets_no_file_card() {
+        let file = FileInput::modified(
+            "src/a.rs",
+            "fn a() {}\nfn b() {}\n",
+            "fn a() {}\n\nfn b() {}\n",
+        );
+        assert_eq!(outline(&[file]), Vec::<String>::new());
+    }
+
+    /// `} // end` belongs to the symbol the brace closes. Absorbing it into the
+    /// next symbol's preamble put the line on two cards, so changing it asked
+    /// for two verdicts on one edit.
+    #[test]
+    fn a_trailing_comment_is_not_absorbed_by_the_next_symbol() {
+        let file = FileInput::modified(
+            "src/a.rs",
+            "fn a() {\n} // trailing\nfn b() {\n}\n",
+            "fn a() {\n} // TRAILING\nfn b() {\n}\n",
+        );
+        assert_eq!(
+            outline(&[file]),
+            vec![row("src/a.rs::a", "function", "modified", "=1/1 -2 +2")]
         );
     }
 

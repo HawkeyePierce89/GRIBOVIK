@@ -10,6 +10,7 @@ import {
   createContext,
   useCallback,
   useContext,
+  useMemo,
   useRef,
   useState,
 } from "react";
@@ -91,7 +92,14 @@ export function useReviewState(initial: ReviewState): ReviewApi {
     [apply],
   );
 
-  return { state, setStatus, addComment, error };
+  // Memoized because `App` builds the context value from this object: a fresh
+  // literal every render makes the context value fresh every render too, and a
+  // context change bypasses React Flow's node memoization — every card would
+  // re-render on every pan, drag and selection, not just on a verdict.
+  return useMemo(
+    () => ({ state, setStatus, addComment, error }),
+    [state, setStatus, addComment, error],
+  );
 }
 
 /**

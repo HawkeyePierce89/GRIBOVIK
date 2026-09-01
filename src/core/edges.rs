@@ -53,11 +53,25 @@ pub fn build_edges(files: &[FileInput], nodes: &[Node]) -> Vec<Edge> {
             let Some(candidates) = index.get(call.as_str()) else {
                 continue;
             };
+            // A deleted body was written against the base revision, where an
+            // added symbol did not exist yet — and an added body cannot call
+            // something the head revision no longer has. Either arrow would
+            // describe no revision of the code, so those candidates are dropped
+            // before the proximity tiers run and a same-named symbol that did
+            // coexist can still win.
+            let candidates: Vec<usize> = candidates
+                .iter()
+                .copied()
+                .filter(|&i| coexisted(caller, &callables[i]))
+                .collect();
+            if candidates.is_empty() {
+                continue;
+            }
             // A symbol calling itself says nothing about the graph. Dropping
             // the self-edge before counting matters: a recursive call that also
             // matches one sibling leaves exactly one real callee, and calling
             // that ambiguous would draw a dashed edge over a certain one.
-            let winners: Vec<usize> = resolve(caller, candidates, &callables)
+            let winners: Vec<usize> = resolve(caller, &candidates, &callables)
                 .into_iter()
                 .filter(|&winner| callables[winner].node.id != caller.node.id)
                 .collect();
@@ -79,6 +93,15 @@ pub fn build_edges(files: &[FileInput], nodes: &[Node]) -> Vec<Edge> {
         }
     }
     dedup(edges)
+}
+
+/// Whether the two cards were ever present in the same revision, so a call
+/// between them could have existed.
+fn coexisted(caller: &Callable, callee: &Callable) -> bool {
+    !matches!(
+        (caller.node.change, callee.node.change),
+        (ChangeKind::Deleted, ChangeKind::Added) | (ChangeKind::Added, ChangeKind::Deleted)
+    )
 }
 
 /// The candidates that win the call, tried nearest-first: the caller's own
@@ -516,6 +539,57 @@ export class Counter {
         assert_eq!(directory("src/app/main.rs"), "src/app");
         assert_eq!(directory("main.rs"), "");
         assert_eq!(directory("src\\app\\main.rs"), "src\\app");
+    }
+
+    /// A deleted body was written against the base revision, where an added
+    /// symbol did not exist yet. Resolving across that boundary drew a
+    /// `certain` arrow describing no revision of the code.
+    #[test]
+    fn a_deleted_caller_never_points_at_an_added_callee() {
+        let file = FileInput::modified(
+            "src/c.rs",
+            "fn gone() { target(); }\n",
+            "fn target() { keep(); }\nfn keep() {}\n",
+        );
+        assert!(
+            !edges_of(&[file])
+                .iter()
+                .any(|edge| edge.starts_with("src/c.rs::gone ->")),
+            "a deleted symbol resolved into the head revision"
+        );
+    }
+
+    /// The mirror case: an added body cannot call something the head revision
+    /// no longer has.
+    #[test]
+    fn an_added_caller_never_points_at_a_deleted_callee() {
+        let file =
+            FileInput::modified("src/c.rs", "fn target() {}\n", "fn fresh() { target(); }\n");
+        assert!(edges_of(&[file]).is_empty());
+    }
+
+    /// Dropping the impossible candidates must not drop the possible ones: a
+    /// same-named symbol that did coexist still wins the call.
+    #[test]
+    fn a_coexisting_callee_still_wins_over_a_dropped_one() {
+        let files = [
+            FileInput::modified(
+                "src/c.rs",
+                "fn gone() { target(); }\n",
+                "fn target() { done(); }\nfn done() {}\n",
+            ),
+            FileInput::modified(
+                "src/other.rs",
+                "fn target() { old(); }\nfn old() {}\n",
+                "fn target() { new_one(); }\nfn new_one() {}\n",
+            ),
+        ];
+        assert!(
+            edges_of(&files)
+                .contains(&"src/c.rs::gone -> src/other.rs::target (certain)".to_string()),
+            "{:?}",
+            edges_of(&files)
+        );
     }
 
     #[test]

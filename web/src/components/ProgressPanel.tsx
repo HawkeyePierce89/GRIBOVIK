@@ -21,7 +21,7 @@ const LABEL: Record<Status, string> = {
 
 export type ProgressPanelProps = {
   state: ReviewState;
-  /** Ids of the nodes currently in the graph; state for others is ignored. */
+  /** Ids of the cards currently in the graph; state for others is ignored. */
   nodeIds: string[];
   /** Which counter is active, or `null` when nothing is highlighted. */
   selected: Status | null;
@@ -39,7 +39,11 @@ export function ProgressPanel({
   return (
     <aside className="progress-panel">
       <h1 className="progress-title">GRIBOVIK</h1>
-      <p className="progress-total">{nodeIds.length} changed symbols</p>
+      {/* "cards", not "changed symbols": `nodeIds` includes the synthetic
+          file-level catch-alls, which are not symbols. */}
+      <p className="progress-total">
+        {nodeIds.length} card{nodeIds.length === 1 ? "" : "s"} to review
+      </p>
       <div className="progress-counters">
         {STATUSES.map((status) => (
           <button

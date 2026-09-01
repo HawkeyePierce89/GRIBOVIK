@@ -64,6 +64,20 @@ pub enum Session {
 /// reads any previously saved review state — but it never binds a port, so an
 /// empty diff costs nothing.
 pub fn prepare(repo: &Repo, args: &Args) -> Result<Session> {
+    // Before the analysis, which costs seconds on a large range: a mistyped
+    // `--assets` otherwise binds a port, opens a browser and answers every
+    // request with a 404 blaming the *embedded* build for a problem in the
+    // directory the reviewer named.
+    if let Some(dir) = args.assets.as_deref() {
+        let index = dir.join("index.html");
+        if !index.is_file() {
+            anyhow::bail!(
+                "--assets {}: no index.html there; run `just build-web` first",
+                dir.display()
+            );
+        }
+    }
+
     let analysis = pipeline::analyze(repo, args.base.as_deref(), args.head.as_deref())?;
     let snapshot = match analysis {
         Analysis::NoChanges { base, head } => {
@@ -197,6 +211,18 @@ mod tests {
             }
             Session::Serve { .. } => panic!("an unchanged range should not start a server"),
         }
+    }
+
+    #[test]
+    fn an_assets_directory_without_an_index_is_rejected_before_the_server_starts() {
+        let (_dir, repo) = repo_without_changes();
+        let empty = TempDir::new().unwrap();
+        let path = empty.path().to_string_lossy().to_string();
+        let args = parse(&["master", "HEAD", "--assets", &path]);
+
+        let err = prepare(&repo, &args).unwrap_err().to_string();
+
+        assert!(err.contains("no index.html"), "unexpected error: {err}");
     }
 
     #[test]
