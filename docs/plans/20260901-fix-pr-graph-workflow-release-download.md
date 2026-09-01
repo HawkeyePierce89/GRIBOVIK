@@ -132,11 +132,11 @@ one paragraph in `CLAUDE.md`.
 
 ### Task 5: Update documentation
 
-- [ ] `README.md`: no user-facing change here (the `--export` behavior is
+- [x] `README.md`: no user-facing change here (the `--export` behavior is
       unchanged and the workflow is CI-internal) — confirm by grepping for
       `pr-graph` and `--export` in `README.md` and leave it alone unless it
       documents the old workflow behavior.
-- [ ] `CLAUDE.md`: already handled in Task 3; confirm no further internal
+- [x] `CLAUDE.md`: already handled in Task 3; confirm no further internal
       pattern changed that would need documenting (this change touches none of
       the core-purity, error-contract or snapshot-contract boundaries).
 
