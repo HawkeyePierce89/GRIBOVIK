@@ -205,9 +205,11 @@ per-PR artifact. Two conventions hold in both:
 
 - Actions are pinned to a major tag (`@v7`, `@v8`), never to a SHA.
 - Any step invoking `gh` sets `GH_REPO: ${{ github.repository }}` in its own
-  `env:` block. The steps `cd` outside the checkout, so `gh` has no working
-  directory to infer a repository from and would otherwise exit with
-  `failed to run git: fatal: not a git repository`.
+  `env:` block — unconditionally, never left to inference. A step that `cd`s
+  outside the checkout, as `pr-graph.yml`'s download does, has no working
+  directory for `gh` to read a repository from and exits with
+  `failed to run git: fatal: not a git repository`; the steps that do stay in
+  the workspace name it anyway, so the rule needs no judgement call.
 
 `pr-graph.yml` is only ever as current as the latest *published* release —
 drafts do not count — so a flag added after that tag is not in the binary the

@@ -160,7 +160,12 @@ fn export_creates_missing_parent_directories() {
 
     export(&repo, &base, &head, &out_file);
 
-    assert!(out_file.exists(), "export did not create {out_file:?}");
+    let html = fs::read_to_string(&out_file)
+        .unwrap_or_else(|e| panic!("export did not create {out_file:?}: {e}"));
+    assert!(
+        html.contains("__GRIBOVIK_SNAPSHOT__"),
+        "missing snapshot payload"
+    );
 }
 
 #[test]
