@@ -47,10 +47,9 @@ fn parse(args: &[&str]) -> Args {
     Args::try_parse_from(std::iter::once("gribovik").chain(args.iter().copied())).unwrap()
 }
 
-#[test]
-fn export_html_writes_a_self_contained_page() {
-    let tmp = TempDir::new().unwrap();
-    let dir = tmp.path();
+/// A two-commit repo in `dir` whose head adds one symbol and a call to it,
+/// returning the two revisions. The shape every export test wants.
+fn repo_with_a_changed_symbol(dir: &Path) -> (String, String) {
     init_repo(dir);
     write_file(dir, "src/counter.rs", "pub fn bump() {}\n");
     let base = commit(dir, "baseline");
@@ -60,16 +59,14 @@ fn export_html_writes_a_self_contained_page() {
         "pub fn bump() { record(); }\npub fn record() {}\n",
     );
     let head = commit(dir, "feature");
+    (base, head)
+}
 
-    let repo = Repo::discover(dir).unwrap();
-    let out_dir = TempDir::new().unwrap();
-    let out_file = out_dir.path().join("out.html");
+/// Take `base..head` through `cli::prepare` and write the export to `out`.
+fn export(repo: &Repo, base: &str, head: &str, out: &Path) {
+    let args = parse(&[base, head, "--export", out.to_str().unwrap()]);
 
-    let args = parse(&[&base, &head, "--export", out_file.to_str().unwrap()]);
-
-    let session = cli::prepare(&repo, &args).unwrap();
-
-    match session {
+    match cli::prepare(repo, &args).unwrap() {
         Session::Export {
             snapshot,
             assets,
@@ -79,6 +76,19 @@ fn export_html_writes_a_self_contained_page() {
         }
         _ => panic!("expected Session::Export"),
     }
+}
+
+#[test]
+fn export_html_writes_a_self_contained_page() {
+    let tmp = TempDir::new().unwrap();
+    let dir = tmp.path();
+    let (base, head) = repo_with_a_changed_symbol(dir);
+
+    let repo = Repo::discover(dir).unwrap();
+    let out_dir = TempDir::new().unwrap();
+    let out_file = out_dir.path().join("out.html");
+
+    export(&repo, &base, &head, &out_file);
 
     // Assert exactly one file exists in the output directory
     let entries: Vec<_> = fs::read_dir(out_dir.path()).unwrap().collect();
@@ -137,15 +147,7 @@ fn export_with_no_changes_writes_no_file() {
 fn export_creates_missing_parent_directories() {
     let tmp = TempDir::new().unwrap();
     let dir = tmp.path();
-    init_repo(dir);
-    write_file(dir, "src/counter.rs", "pub fn bump() {}\n");
-    let base = commit(dir, "baseline");
-    write_file(
-        dir,
-        "src/counter.rs",
-        "pub fn bump() { record(); }\npub fn record() {}\n",
-    );
-    let head = commit(dir, "feature");
+    let (base, head) = repo_with_a_changed_symbol(dir);
 
     let repo = Repo::discover(dir).unwrap();
     let out_dir = TempDir::new().unwrap();
@@ -156,23 +158,33 @@ fn export_creates_missing_parent_directories() {
         .join("nested")
         .join("review.html");
 
-    let args = parse(&[&base, &head, "--export", out_file.to_str().unwrap()]);
-
-    let session = cli::prepare(&repo, &args).unwrap();
-
-    match session {
-        Session::Export {
-            snapshot,
-            assets,
-            path,
-        } => {
-            gribovik::export::write(&assets, &snapshot, &path).unwrap();
-        }
-        _ => panic!("expected Session::Export"),
-    }
+    export(&repo, &base, &head, &out_file);
 
     assert!(out_file.exists(), "export did not create {out_file:?}");
-    let html = fs::read_to_string(&out_file).unwrap();
+}
+
+#[test]
+fn export_to_a_bare_filename_writes_into_the_working_directory() {
+    let tmp = TempDir::new().unwrap();
+    let dir = tmp.path();
+    let (base, head) = repo_with_a_changed_symbol(dir);
+
+    // The PR workflow runs exactly this form, whose parent path is empty
+    // rather than absent. Going through the binary keeps the working
+    // directory to this process, out of reach of the other tests.
+    let out = Command::new(env!("CARGO_BIN_EXE_gribovik"))
+        .current_dir(dir)
+        .args(["--export", "review.html", &base, &head])
+        .output()
+        .expect("the gribovik binary runs");
+
+    assert!(
+        out.status.success(),
+        "gribovik failed: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+
+    let html = fs::read_to_string(dir.join("review.html")).unwrap();
     assert!(
         html.contains("__GRIBOVIK_SNAPSHOT__"),
         "missing snapshot payload"
