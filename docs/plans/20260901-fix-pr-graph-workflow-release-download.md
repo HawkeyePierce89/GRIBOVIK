@@ -51,22 +51,22 @@ one paragraph in `CLAUDE.md`.
 **Files:**
 - Modify: `.github/workflows/pr-graph.yml`
 
-- [ ] Confirm `v7` is still the current major for both actions before pinning:
+- [x] Confirm `v7` is still the current major for both actions before pinning:
       `gh api repos/actions/checkout/releases/latest --jq .tag_name` and
       `gh api repos/actions/upload-artifact/releases/latest --jq .tag_name`.
       If either has moved past `v7`, stop and report rather than pinning to a
       stale major.
-- [ ] In the `Download release` step, add `GH_REPO: ${{ github.repository }}`
+- [x] In the `Download release` step, add `GH_REPO: ${{ github.repository }}`
       alongside the existing `GH_TOKEN` in the step's `env:` block, matching the
       `Publish Release` step in `release.yml`. Leave the `cd "$RUNNER_TEMP"`
       and the `gh release download --pattern ...` line as they are — the step
       must not depend on the working directory being a checkout.
-- [ ] Bump `actions/checkout@v4` -> `actions/checkout@v7`.
-- [ ] Bump `actions/upload-artifact@v4` -> `actions/upload-artifact@v7`.
-- [ ] Change nothing else in the file: the trigger, `permissions: contents: read`,
+- [x] Bump `actions/checkout@v4` -> `actions/checkout@v7`.
+- [x] Bump `actions/upload-artifact@v4` -> `actions/upload-artifact@v7`.
+- [x] Change nothing else in the file: the trigger, `permissions: contents: read`,
       the `Generate graph` step and `if-no-files-found: ignore` all stay.
-- [ ] Run `actionlint .github/workflows/pr-graph.yml` — must pass with no output.
-- [ ] Reproduce the review's failure scenario and prove it now passes: in a
+- [x] Run `actionlint .github/workflows/pr-graph.yml` — must pass with no output.
+- [x] Reproduce the review's failure scenario and prove it now passes: in a
       fresh empty directory that is not inside any git working tree (e.g. a
       `mktemp -d` outside the repo), with `GH_TOKEN` from `gh auth token` and
       `GH_REPO=HawkeyePierce89/GRIBOVIK` exported the same way the workflow
@@ -75,7 +75,7 @@ one paragraph in `CLAUDE.md`.
       then `tar -xzf ./*-x86_64-unknown-linux-gnu.tar.gz`, then `chmod +x gribovik`)
       and assert it exits 0 and leaves an executable `gribovik` in that
       directory. Clean up the temp directory afterwards.
-- [ ] Optionally, as a negative control, run the same snippet once without
+- [x] Optionally, as a negative control, run the same snippet once without
       `GH_REPO` set and confirm it still fails with the
       `not a git repository` error — this is what makes the fix demonstrably
       the cause of the pass.
