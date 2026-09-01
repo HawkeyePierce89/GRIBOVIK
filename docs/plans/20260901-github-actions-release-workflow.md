@@ -204,15 +204,15 @@ changes.
 
 ### Task 5: Verify acceptance criteria
 
-- [ ] Run `actionlint .github/workflows/release.yml` a final time — must exit 0
+- [x] Run `actionlint .github/workflows/release.yml` a final time — must exit 0
       with no output.
-- [ ] Confirm each archive name is spelled exactly
+- [x] Confirm each archive name is spelled exactly
       `gribovik-<version>-<target>.tar.gz` / `.zip` by grepping the workflow for
       the `NAME` construction, and confirm the leading `v` is stripped
       (`${GITHUB_REF_NAME#v}`), matching the settled naming decision.
-- [ ] Confirm the workflow requests `contents: write` only on the `release` job
+- [x] Confirm the workflow requests `contents: write` only on the `release` job
       and `contents: read` at the top level.
-- [ ] Run the repo's existing checks — the branch must be green even though the
+- [x] Run the repo's existing checks — the branch must be green even though the
       workflow does not touch them:
       `just build-web` (needed once for `build.rs`), then `cargo test`,
       `cargo clippy --all-targets -- -D warnings`, `cargo fmt --check`, and
