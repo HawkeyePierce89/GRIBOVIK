@@ -22,7 +22,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          cargo_version=$(sed -n '/^version = /{s/^version = "\(.*\)"$/\1/p;q;}' Cargo.toml)
+          cargo_version=$(sed -n '/^version = /{s/^version = "\([^"]*\)".*/\1/p;q;}' Cargo.toml)
           if [ "$GITHUB_EVENT_NAME" = "push" ] && [ "$GITHUB_REF_TYPE" = "tag" ]; then
             version="${GITHUB_REF_NAME#v}"
             if [ "$version" != "$cargo_version" ]; then
@@ -130,7 +130,7 @@ jobs:
             exit 1
           fi
           
-          if ! git ls-remote --tags origin "refs/tags/$TAG*" | grep -q "$GITHUB_SHA"; then
+          if ! git ls-remote --tags origin "refs/tags/$TAG" "refs/tags/${TAG}^{}" | grep -q "$GITHUB_SHA"; then
             echo "::error::Remote tag $TAG no longer points to event SHA $GITHUB_SHA"
             exit 1
           fi
