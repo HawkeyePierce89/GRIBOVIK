@@ -163,24 +163,24 @@ changes.
 **Files:**
 - Modify: `.github/workflows/release.yml`
 
-- [ ] Add job `release` with `needs: [guard, build]` and
+- [x] Add job `release` with `needs: [guard, build]` and
       `if: github.ref_type == 'tag'` — with no `always()`, `needs` already means
       the job is skipped unless all five builds succeeded, so a failed target
       can never produce a partial release.
-- [ ] Give it `runs-on: ubuntu-latest` and job-scoped
+- [x] Give it `runs-on: ubuntu-latest` and job-scoped
       `permissions: contents: write`; the top-level default stays `read`, so
       nothing else in the workflow can write.
-- [ ] Add `actions/download-artifact@v8` with `path: dist`,
+- [x] Add `actions/download-artifact@v8` with `path: dist`,
       `pattern: gribovik-*` and `merge-multiple: true`, collapsing the five
       per-target artifacts into one flat `dist/`.
-- [ ] Add a `shell: bash` step with `set -euo pipefail` that lists `dist`,
+- [x] Add a `shell: bash` step with `set -euo pipefail` that lists `dist`,
       asserts it holds exactly 5 files (`::error::` and exit 1 otherwise), then
       runs `gh release create "$TAG" --title "$TAG" --generate-notes dist/*`
       with `env: GH_TOKEN: ${{ github.token }}` and `TAG: ${{ github.ref_name }}`.
       `gh` is preinstalled on `ubuntu-latest`, so no third-party action and no
       extra token are needed.
 - [x] Verify: `actionlint .github/workflows/release.yml` exits 0.
-- [ ] Verify: `bash -n` the publish snippet; confirm by reading the file that
+- [x] Verify: `bash -n` the publish snippet; confirm by reading the file that
       the trigger→job graph is exactly `tag push → guard → 5 builds → release`
       and `dispatch → guard (label only) → 5 builds → no release`.
 
