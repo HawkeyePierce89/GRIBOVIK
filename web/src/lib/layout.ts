@@ -30,6 +30,23 @@ const MAX_DIFF_HEIGHT = 256;
 const COMMENT_HEIGHT = 34;
 /** `.comments` scrolls past `max-height: 8rem`. */
 const MAX_COMMENTS_HEIGHT = 128;
+/** The `gap: 0.5rem` `.symbol-node` puts above the comment list. */
+const COMMENTS_GAP = 8;
+
+/**
+ * Vertical room left free below every card for comments added *after* layout.
+ *
+ * Layout runs once, on load, and React Flow then holds each card at the
+ * position it was given — but a card grows downward the moment a comment is
+ * added to it, and nothing recomputes the neighbours below. Two comments are
+ * already taller than any ordinary gap, so the card would be drawn over the
+ * next one. Re-running elk on every comment is the other way out and a worse
+ * one: cards the reviewer is not looking at would jump around mid-review.
+ *
+ * `MAX_COMMENTS_HEIGHT` is a hard ceiling — the list scrolls past it — so this
+ * much headroom makes the overlap impossible rather than merely unlikely.
+ */
+const COMMENT_HEADROOM = MAX_COMMENTS_HEIGHT + COMMENTS_GAP;
 
 /**
  * elk in a real web worker, so the tab stays alive while it thinks.
@@ -81,7 +98,14 @@ const LAYOUT_OPTIONS: Record<string, string> = {
   "elk.algorithm": "layered",
   "elk.direction": "RIGHT",
   "elk.layered.spacing.nodeNodeBetweenLayers": "120",
-  "elk.spacing.nodeNode": "60",
+  // The two gaps a card that grows can eat into, both carrying
+  // `COMMENT_HEADROOM` on top of the 60px that is there to be looked at.
+  // `nodeNode` separates cards inside one connected component; anything the
+  // edge resolver found no caller for is a component of its own, and those are
+  // packed by `componentComponent` — most of a real graph, and 20px apart if
+  // left at its default.
+  "elk.spacing.nodeNode": `${60 + COMMENT_HEADROOM}`,
+  "elk.spacing.componentComponent": `${60 + COMMENT_HEADROOM}`,
   "elk.layered.nodePlacement.strategy": "BRANDES_KOEPF",
 };
 
@@ -94,6 +118,11 @@ const LAYOUT_OPTIONS: Record<string, string> = {
  * card, so reopening a review that already has some makes every commented card
  * taller than a diff-only estimate predicts, and elk stacks them into each
  * other. It defaults to empty for a first run, where no card has comments yet.
+ *
+ * This is the height the card has *now*; room for the comments a reviewer adds
+ * during the session is reserved separately, as [`COMMENT_HEADROOM`] below
+ * every card, so that the estimate here stays an honest answer to "how tall is
+ * this card" and can be compared against a rendered one.
  */
 export function nodeHeight(
   node: SymbolFlowNode,
@@ -127,7 +156,7 @@ export function gridLayout(
     const file = node.data.snapshot.file;
     if (!columns.has(file)) columns.set(file, columns.size);
     const y = nextY.get(file) ?? 0;
-    nextY.set(file, y + nodeHeight(node, state) + 60);
+    nextY.set(file, y + nodeHeight(node, state) + COMMENT_HEADROOM + 60);
     return {
       ...node,
       position: { x: (columns.get(file) as number) * (NODE_WIDTH + 120), y },

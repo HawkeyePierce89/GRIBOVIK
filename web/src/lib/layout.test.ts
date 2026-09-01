@@ -124,6 +124,77 @@ describe("layout", () => {
     }
   });
 
+  it("leaves room below a card for comments added after layout", async () => {
+    const snapshot = chain();
+    snapshot.edges = [];
+    const { nodes, edges } = toFlow(snapshot);
+
+    // Laid out with no comments at all — the first-run case.
+    const placed = await layout(nodes, edges);
+
+    // Then the reviewer fills both cards with comments, past the point where
+    // the list starts scrolling. Positions do not move, so the gap left below
+    // each card has to absorb every pixel that card can still grow by.
+    const full = Object.fromEntries(
+      nodes.map((node) => [
+        node.id,
+        {
+          status: "pending" as const,
+          comments: Array.from({ length: 20 }, () => ({
+            text: "why this?",
+            created_at: "2026-09-01T00:00:00Z",
+          })),
+        },
+      ]),
+    );
+    const column = [...placed].sort((a, b) => a.position.y - b.position.y);
+    for (let i = 1; i < column.length; i += 1) {
+      const above = column[i - 1]!;
+      expect(column[i]!.position.y).toBeGreaterThanOrEqual(
+        above.position.y + nodeHeight(above, full),
+      );
+    }
+  });
+
+  it("leaves the same room between cards that share a caller", async () => {
+    // Two callees of one caller sit in the same layer of one component, where
+    // a different elk spacing governs the gap than between the disconnected
+    // components above. Both have to carry the headroom.
+    const snapshot = chain();
+    snapshot.nodes.push({
+      ...snapshot.nodes[1]!,
+      id: "a::other",
+      name: "a::other",
+    });
+    snapshot.edges.push({
+      from: "a::caller",
+      to: "a::other",
+      confidence: "certain",
+    });
+    const { nodes, edges } = toFlow(snapshot);
+
+    const placed = await layout(nodes, edges);
+
+    const full = Object.fromEntries(
+      nodes.map((node) => [
+        node.id,
+        {
+          status: "pending" as const,
+          comments: Array.from({ length: 20 }, () => ({
+            text: "why this?",
+            created_at: "2026-09-01T00:00:00Z",
+          })),
+        },
+      ]),
+    );
+    const callees = placed
+      .filter((node) => node.id !== "a::caller")
+      .sort((a, b) => a.position.y - b.position.y);
+    expect(callees[1]!.position.y).toBeGreaterThanOrEqual(
+      callees[0]!.position.y + nodeHeight(callees[0]!, full),
+    );
+  });
+
   it("returns nothing for an empty graph", async () => {
     expect(await layout([], [])).toEqual([]);
   });
@@ -152,6 +223,25 @@ describe("gridLayout", () => {
     expect(placed[1]!.position.x).toBe(placed[0]!.position.x);
     expect(placed[1]!.position.y).toBeGreaterThanOrEqual(
       placed[0]!.position.y + nodeHeight(nodes[0]!),
+    );
+  });
+
+  it("leaves the same room for later comments as elk does", () => {
+    const { nodes } = toFlow(chain());
+
+    const placed = gridLayout(nodes);
+
+    const full = {
+      "a::caller": {
+        status: "pending" as const,
+        comments: Array.from({ length: 20 }, () => ({
+          text: "why this?",
+          created_at: "2026-09-01T00:00:00Z",
+        })),
+      },
+    };
+    expect(placed[1]!.position.y).toBeGreaterThanOrEqual(
+      placed[0]!.position.y + nodeHeight(nodes[0]!, full),
     );
   });
 });

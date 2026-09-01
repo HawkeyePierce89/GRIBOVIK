@@ -100,7 +100,11 @@ pub fn prepare(repo: &Repo, args: &Args) -> Result<Session> {
     };
 
     let state_path = review::state_path(repo.git_dir()?, &snapshot.meta.base, &snapshot.meta.head);
-    let state = review::load(&state_path);
+    // Reconciled against the snapshot before anything can read it: the file is
+    // keyed by branch, so it survives new commits on that branch, and a symbol
+    // those commits rewrote must come back as pending rather than wearing the
+    // approval its previous version earned.
+    let state = review::reconcile(review::load(&state_path), &snapshot);
     let assets = Assets::new(args.assets.clone());
 
     Ok(Session::Serve {

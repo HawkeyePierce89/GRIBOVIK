@@ -112,6 +112,15 @@ blank line between symbols.
 
 The same rule applies to `ReviewState` in `src/review.rs` and its TS twin.
 
+The state file is keyed by branch, not by commit, so it deliberately outlives
+the commits it describes — a new commit must not orphan a review of four
+hundred cards. What keeps that from replaying an approval over rewritten code
+is the `fingerprint` on each entry: the server stamps it from the node's diff
+on every write, and `review::reconcile` — run once in `cli.rs`, on the state
+loaded at startup — sends every entry whose fingerprint no longer matches back
+to pending, keeping its comments. The browser only carries the field back and
+forth, so the hash lives on one side.
+
 ## The HTTP API
 
 Three routes, and everything else falls through to the SPA assets (an unmatched
@@ -120,7 +129,9 @@ path returns `index.html` so client-side routing works):
 - `GET /api/graph` — the snapshot, computed before the server binds and fixed
   for the lifetime of the process.
 - `GET /api/state` — the verdicts recorded so far.
-- `POST /api/state` — **replaces** the whole `ReviewState` and answers 204.
+- `POST /api/state` — **replaces** the whole `ReviewState` and answers 204,
+  stamping each entry with `review::fingerprint` of the node it names on the
+  way to disk.
 
 Every request must address the server by a loopback name — a middleware rejects
 any other `Host` with 403. Binding loopback stops the network, but not a page

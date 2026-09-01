@@ -80,6 +80,15 @@ export type ReviewState = Record<string, NodeReview>;
 export interface NodeReview {
   status: Status;
   comments: Comment[];
+  /**
+   * Digest of the diff the verdict was recorded against, owned by the server:
+   * it stamps every entry on `POST /api/state` and drops the statuses whose
+   * digest no longer matches when the next run loads the file. The client
+   * carries the field back and forth without reading it, so the two sides
+   * never have to agree on a hash — which is why it is optional here and
+   * absent on an entry the client has just created.
+   */
+  fingerprint?: string;
 }
 
 /** Where a node stands in the review. */

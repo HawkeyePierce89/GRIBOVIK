@@ -205,6 +205,12 @@ async fn post_state(
     // older state win the race and outlive the newer one the browser is showing.
     let mut guard = state.lock();
     *guard = incoming;
+    // Stamped here, against the snapshot this process is serving: a verdict
+    // arriving now is a verdict on the code the browser is showing, and
+    // recording which code that was is what stops the next run from replaying
+    // it over a rewritten symbol. The client never computes or reads the
+    // field — it only carries it back and forth.
+    review::stamp(&mut guard, &state.snapshot);
 
     match review::save(&state.state_path, &guard) {
         Ok(()) => StatusCode::NO_CONTENT.into_response(),
@@ -277,8 +283,18 @@ mod tests {
                     text: "fine".to_string(),
                     created_at: "2026-09-01T10:00:00.000Z".to_string(),
                 }],
+                fingerprint: None,
             },
         );
+        state
+    }
+
+    /// `review()` as the server keeps it: `POST /api/state` stamps every entry
+    /// with the fingerprint of the node it describes, so what comes back out
+    /// carries one even though the client never sent it.
+    fn stamped() -> ReviewState {
+        let mut state = review();
+        review::stamp(&mut state, &snapshot());
         state
     }
 
@@ -429,7 +445,7 @@ mod tests {
         assert_eq!(posted.status(), StatusCode::NO_CONTENT);
 
         let fetched = get(&app, "/api/state").await;
-        assert_eq!(body_json::<ReviewState>(fetched).await, review());
+        assert_eq!(body_json::<ReviewState>(fetched).await, stamped());
     }
 
     #[tokio::test]
@@ -444,7 +460,27 @@ mod tests {
         )
         .await;
 
-        assert_eq!(review::load(&path), review());
+        assert_eq!(review::load(&path), stamped());
+    }
+
+    /// The fingerprint is what stops the next run from replaying an approval
+    /// over a symbol that changed since, and the client never computes it.
+    #[tokio::test]
+    async fn posting_state_stamps_each_entry_with_its_nodes_fingerprint() {
+        let (_dir, _path, app) = app(ReviewState::new());
+
+        post_json(
+            &app,
+            "/api/state",
+            serde_json::to_string(&review()).unwrap(),
+        )
+        .await;
+
+        let stored = body_json::<ReviewState>(get(&app, "/api/state").await).await;
+        assert_eq!(
+            stored["src/a.rs::alpha"].fingerprint.as_deref(),
+            Some(review::fingerprint(&snapshot().nodes[0]).as_str())
+        );
     }
 
     #[tokio::test]

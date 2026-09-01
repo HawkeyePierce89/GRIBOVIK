@@ -17,6 +17,8 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 
+use crate::core::snapshot::{DiffTag, GraphSnapshot, Node};
+
 /// Node id → the reviewer's verdict on that node.
 ///
 /// A `BTreeMap` keeps the JSON stable across saves, which makes the file
@@ -30,6 +32,21 @@ pub struct NodeReview {
     pub status: Status,
     #[serde(default)]
     pub comments: Vec<Comment>,
+    /// [`fingerprint`] of the node's diff when the status was recorded.
+    ///
+    /// The state file is keyed by branch rather than by commit, so it outlives
+    /// the commits it describes on purpose — a new commit must not orphan a
+    /// review of four hundred cards. What it must not do is carry an approval
+    /// across a change to the very code that was approved, and the node id
+    /// alone cannot tell those apart: `src/a.rs::foo` names the same card
+    /// before and after `foo` is rewritten. Stamping the diff the reviewer
+    /// actually looked at is what lets [`reconcile`] send exactly the changed
+    /// cards back to pending and leave the rest alone.
+    ///
+    /// `None` on an entry written before this field existed, and on one the
+    /// server has never stamped; both are treated as "does not match".
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub fingerprint: Option<String>,
 }
 
 /// Where a node stands in the review.
@@ -59,8 +76,9 @@ pub struct Comment {
 /// `<root>/.git`: in a linked worktree or a submodule that path is a file, and
 /// writing under it fails.
 ///
-/// Revision names go into the file name verbatim except for `/`, which would
-/// otherwise turn `origin/master..HEAD` into nested directories.
+/// Revision names are percent-encoded on the way in, both so that a `/` cannot
+/// turn `origin/master..HEAD` into nested directories and so that no two
+/// revision names can land on one file; see [`sanitize`].
 pub fn state_path(git_dir: impl AsRef<Path>, base: &str, head: &str) -> PathBuf {
     git_dir
         .as_ref()
@@ -68,9 +86,129 @@ pub fn state_path(git_dir: impl AsRef<Path>, base: &str, head: &str) -> PathBuf 
         .join(format!("{}..{}.json", sanitize(base), sanitize(head)))
 }
 
-/// Replace path separators in a revision name so it can be a file name.
+/// Encode a revision name so that it can be a file name and still names only
+/// itself.
+///
+/// Anything outside `[A-Za-z0-9._-]` becomes `%XX`, `%` included, which makes
+/// the mapping reversible and therefore collision-free. Replacing `/` with `-`
+/// was not: `feature/foo` and `feature-foo` are different branches that share
+/// a merge base, so they were filed under one name, and the first click on one
+/// of them overwrote the other's verdicts with its own.
+///
+/// `.` is left alone even though the parts are joined with `..`, because the
+/// only way that could be ambiguous is a revision name containing `..`, and
+/// git forbids that in a ref and rejects it as a commit-ish before the range
+/// ever reaches this function.
 fn sanitize(rev: &str) -> String {
-    rev.replace('/', "-")
+    let mut out = String::with_capacity(rev.len());
+    for byte in rev.bytes() {
+        match byte {
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'.' | b'_' | b'-' => {
+                out.push(char::from(byte))
+            }
+            _ => out.push_str(&format!("%{byte:02X}")),
+        }
+    }
+    out
+}
+
+/// FNV-1a, 64-bit: the offset basis and the prime.
+///
+/// Hand-rolled rather than pulled from a crate because the fingerprint never
+/// leaves this machine and defends against nothing but accident — what it
+/// needs is to be identical across runs and versions of the compiler, which
+/// `DefaultHasher` explicitly does not promise.
+const FNV_OFFSET: u64 = 0xcbf2_9ce4_8422_2325;
+const FNV_PRIME: u64 = 0x0000_0100_0000_01b3;
+
+fn feed(mut hash: u64, bytes: &[u8]) -> u64 {
+    for byte in bytes {
+        hash ^= u64::from(*byte);
+        hash = hash.wrapping_mul(FNV_PRIME);
+    }
+    hash
+}
+
+/// A short digest of the diff a node is showing.
+///
+/// Everything the reviewer reads on the card goes in — the tag, both line
+/// numbers and the text of every line — so that a card whose fingerprint is
+/// unchanged is a card whose content is unchanged, and a verdict on it is
+/// still a verdict on what is there now.
+pub fn fingerprint(node: &Node) -> String {
+    let mut hash = FNV_OFFSET;
+    for line in &node.diff {
+        hash = feed(
+            hash,
+            &[match line.tag {
+                DiffTag::Add => b'+',
+                DiffTag::Del => b'-',
+                DiffTag::Context => b' ',
+            }],
+        );
+        hash = feed(hash, &line.old_line.unwrap_or(0).to_le_bytes());
+        hash = feed(hash, &line.new_line.unwrap_or(0).to_le_bytes());
+        hash = feed(hash, line.text.as_bytes());
+        hash = feed(hash, b"\n");
+    }
+    format!("{hash:016x}")
+}
+
+/// Drop the statuses that were recorded against a different version of the
+/// code, keeping everything else.
+///
+/// Run once, on the state loaded at startup, against the snapshot the session
+/// will serve. A node whose diff still fingerprints the same keeps its verdict;
+/// one whose diff moved on goes back to pending, because "approved" there would
+/// mean the reviewer approved lines they have never seen. Comments survive
+/// either way — they are the reviewer's own words, and a stale note is worth
+/// more than no note.
+///
+/// Entries for nodes that are not in this snapshot at all are left untouched:
+/// there is nothing to compare them against, and a range that stops showing a
+/// file should not silently erase what was decided about it.
+pub fn reconcile(state: ReviewState, snapshot: &GraphSnapshot) -> ReviewState {
+    let current: BTreeMap<&str, String> = snapshot
+        .nodes
+        .iter()
+        .map(|node| (node.id.as_str(), fingerprint(node)))
+        .collect();
+
+    state
+        .into_iter()
+        .filter_map(|(id, mut review)| {
+            match current.get(id.as_str()) {
+                Some(now) if review.fingerprint.as_deref() == Some(now.as_str()) => {}
+                Some(_) => {
+                    review.status = Status::Pending;
+                    review.fingerprint = None;
+                }
+                None => {}
+            }
+            // An entry that is now pending with nothing else in it says exactly
+            // what an absent entry says, and keeping it would grow the file by
+            // one dead record per rewritten symbol.
+            if review.status == Status::Pending && review.comments.is_empty() {
+                return None;
+            }
+            Some((id, review))
+        })
+        .collect()
+}
+
+/// Stamp every entry with the fingerprint of the node it describes, right
+/// before the state is written.
+///
+/// The server does this rather than the browser: the fingerprint is a claim
+/// about what the analysis produced, and the analysis lives on this side. The
+/// client round-trips the field without reading it, so the two sides never have
+/// to agree on a hash function.
+pub fn stamp(state: &mut ReviewState, snapshot: &GraphSnapshot) {
+    for node in &snapshot.nodes {
+        if let Some(review) = state.get_mut(&node.id) {
+            review.fingerprint = Some(fingerprint(node));
+        }
+    }
 }
 
 /// Read the state at `path`, falling back to an empty state.
@@ -144,6 +282,7 @@ fn temp_path(dir: &Path, name: &OsStr) -> PathBuf {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::core::snapshot::{ChangeKind, DiffLine, Meta};
     use serde_json::json;
     use tempfile::TempDir;
 
@@ -157,6 +296,7 @@ mod tests {
                     text: "reads fine".to_string(),
                     created_at: "2026-09-01T10:00:00.000Z".to_string(),
                 }],
+                fingerprint: None,
             },
         );
         state.insert(
@@ -164,6 +304,7 @@ mod tests {
             NodeReview {
                 status: Status::Rejected,
                 comments: vec![],
+                fingerprint: None,
             },
         );
         state
@@ -178,10 +319,26 @@ mod tests {
     }
 
     #[test]
-    fn state_path_sanitizes_slashes_in_revision_names() {
+    fn state_path_encodes_slashes_in_revision_names() {
         assert_eq!(
             state_path("/tmp/repo/.git", "origin/master", "feature/thing"),
-            PathBuf::from("/tmp/repo/.git/gribovik/origin-master..feature-thing.json")
+            PathBuf::from("/tmp/repo/.git/gribovik/origin%2Fmaster..feature%2Fthing.json")
+        );
+    }
+
+    #[test]
+    fn branches_that_differ_only_in_a_separator_get_different_files() {
+        assert_ne!(
+            state_path("/tmp/repo/.git", "abc123", "feature/foo"),
+            state_path("/tmp/repo/.git", "abc123", "feature-foo")
+        );
+    }
+
+    #[test]
+    fn an_encoded_name_is_encoded_again_rather_than_colliding() {
+        assert_ne!(
+            state_path("/tmp/repo/.git", "abc123", "feature/foo"),
+            state_path("/tmp/repo/.git", "abc123", "feature%2Ffoo")
         );
     }
 
@@ -341,5 +498,186 @@ mod tests {
         );
         let filled_in: NodeReview = serde_json::from_str("{}").unwrap();
         assert_eq!(filled_in, NodeReview::default());
+    }
+
+    #[test]
+    fn a_fingerprint_is_written_and_read_under_its_own_name() {
+        let review = NodeReview {
+            status: Status::Approved,
+            comments: vec![],
+            fingerprint: Some("28438e3e5b981cc8".to_string()),
+        };
+        let value = serde_json::to_value(&review).unwrap();
+        assert_eq!(
+            value,
+            json!({
+                "status": "approved",
+                "comments": [],
+                "fingerprint": "28438e3e5b981cc8"
+            })
+        );
+        assert_eq!(serde_json::from_value::<NodeReview>(value).unwrap(), review);
+    }
+
+    fn node(id: &str, text: &str) -> Node {
+        Node {
+            id: id.to_string(),
+            file: "src/a.rs".to_string(),
+            name: "foo".to_string(),
+            kind: "function".to_string(),
+            change: ChangeKind::Modified,
+            diff: vec![DiffLine {
+                tag: DiffTag::Add,
+                old_line: None,
+                new_line: Some(1),
+                text: text.to_string(),
+            }],
+        }
+    }
+
+    fn snapshot(nodes: Vec<Node>) -> GraphSnapshot {
+        GraphSnapshot {
+            meta: Meta {
+                repo: "repo".to_string(),
+                base: "abc123".to_string(),
+                head: "feature".to_string(),
+                files_changed: 1,
+                warnings: vec![],
+            },
+            nodes,
+            edges: vec![],
+        }
+    }
+
+    #[test]
+    fn a_fingerprint_follows_the_diff_and_nothing_else() {
+        assert_eq!(
+            fingerprint(&node("src/a.rs::foo", "same")),
+            fingerprint(&node("src/a.rs::other", "same"))
+        );
+        assert_ne!(
+            fingerprint(&node("src/a.rs::foo", "one")),
+            fingerprint(&node("src/a.rs::foo", "two"))
+        );
+    }
+
+    #[test]
+    fn stamping_records_the_fingerprint_of_each_reviewed_node() {
+        let snapshot = snapshot(vec![node("src/a.rs::foo", "one")]);
+        let mut state = ReviewState::new();
+        state.insert("src/a.rs::foo".to_string(), NodeReview::default());
+        state.insert("src/gone.rs::old".to_string(), NodeReview::default());
+
+        stamp(&mut state, &snapshot);
+
+        assert_eq!(
+            state["src/a.rs::foo"].fingerprint.as_deref(),
+            Some(fingerprint(&node("src/a.rs::foo", "one")).as_str())
+        );
+        assert_eq!(state["src/gone.rs::old"].fingerprint, None);
+    }
+
+    #[test]
+    fn reconcile_keeps_a_verdict_on_code_that_did_not_move() {
+        let snapshot = snapshot(vec![node("src/a.rs::foo", "one")]);
+        let mut state = ReviewState::new();
+        state.insert(
+            "src/a.rs::foo".to_string(),
+            NodeReview {
+                status: Status::Approved,
+                comments: vec![],
+                fingerprint: Some(fingerprint(&node("src/a.rs::foo", "one"))),
+            },
+        );
+
+        let reconciled = reconcile(state.clone(), &snapshot);
+
+        assert_eq!(reconciled, state);
+    }
+
+    #[test]
+    fn reconcile_sends_a_rewritten_symbol_back_to_pending() {
+        // The same node id, approved against the diff it used to carry.
+        let snapshot = snapshot(vec![node("src/a.rs::foo", "two")]);
+        let mut state = ReviewState::new();
+        state.insert(
+            "src/a.rs::foo".to_string(),
+            NodeReview {
+                status: Status::Approved,
+                comments: vec![Comment {
+                    text: "looked at the old one".to_string(),
+                    created_at: "2026-09-01T10:00:00.000Z".to_string(),
+                }],
+                fingerprint: Some(fingerprint(&node("src/a.rs::foo", "one"))),
+            },
+        );
+
+        let reconciled = reconcile(state, &snapshot);
+
+        let entry = &reconciled["src/a.rs::foo"];
+        assert_eq!(entry.status, Status::Pending);
+        assert_eq!(entry.fingerprint, None);
+        // The reviewer's own words outlive the verdict they came with.
+        assert_eq!(entry.comments.len(), 1);
+    }
+
+    #[test]
+    fn reconcile_drops_a_verdict_that_has_nothing_left_to_say() {
+        let snapshot = snapshot(vec![node("src/a.rs::foo", "two")]);
+        let mut state = ReviewState::new();
+        state.insert(
+            "src/a.rs::foo".to_string(),
+            NodeReview {
+                status: Status::Approved,
+                comments: vec![],
+                fingerprint: Some(fingerprint(&node("src/a.rs::foo", "one"))),
+            },
+        );
+
+        assert_eq!(reconcile(state, &snapshot), ReviewState::new());
+    }
+
+    /// A state file written before fingerprints existed carries none, and the
+    /// safe reading of "no record of what was approved" is "not approved".
+    #[test]
+    fn reconcile_does_not_trust_an_unstamped_verdict() {
+        let snapshot = snapshot(vec![node("src/a.rs::foo", "one")]);
+        let mut state = ReviewState::new();
+        state.insert(
+            "src/a.rs::foo".to_string(),
+            NodeReview {
+                status: Status::Approved,
+                comments: vec![Comment {
+                    text: "from an older run".to_string(),
+                    created_at: "2026-09-01T10:00:00.000Z".to_string(),
+                }],
+                fingerprint: None,
+            },
+        );
+
+        let reconciled = reconcile(state, &snapshot);
+
+        assert_eq!(reconciled["src/a.rs::foo"].status, Status::Pending);
+    }
+
+    /// A node the current range does not show cannot be compared against
+    /// anything, and erasing it would lose a verdict the reviewer may still
+    /// want when the range comes back.
+    #[test]
+    fn reconcile_leaves_a_node_outside_the_snapshot_alone() {
+        let snapshot = snapshot(vec![node("src/a.rs::foo", "one")]);
+        let mut state = ReviewState::new();
+        state.insert(
+            "src/elsewhere.rs::bar".to_string(),
+            NodeReview {
+                status: Status::Approved,
+                comments: vec![],
+                fingerprint: Some("stale".to_string()),
+            },
+        );
+
+        let reconciled = reconcile(state.clone(), &snapshot);
+
+        assert_eq!(reconciled, state);
     }
 }

@@ -141,7 +141,9 @@ default — is expanded to the branch you are on, or to the short commit if the
 checkout is detached. Two branches cut from the same commit share a merge base,
 so without that expansion they would share a review file and each would open on
 the other's verdicts. `gribovik origin/master` on `feature/x` therefore writes
-something like `9f3c1e…a2..feature-x.json`; slashes in the head become `-`.
+something like `9f3c1e…a2..feature%2Fx.json`; anything outside
+`[A-Za-z0-9._-]` is percent-encoded, so two branch names can never land on one
+file.
 
 One consequence is worth knowing: fetching new commits onto the base branch or
 rebasing moves the merge base, which starts a fresh review file — the old marks
@@ -153,7 +155,13 @@ Because it lives inside the git directory it is never committed, is not shared
 with anyone else, and disappears with the clone. A missing or corrupt file is
 treated as an empty review rather than an error.
 
-Re-running GRIBOVIK on the same `base..head` picks the marks back up.
+Re-running GRIBOVIK on the same `base..head` picks the marks back up — except
+for the cards whose code changed in the meantime. Each entry records a digest of
+the diff it was decided on, and a card whose diff no longer matches opens as
+**pending** again, because an approval of the previous version is not an
+approval of this one. Comments are kept either way; they are your words, not a
+verdict. A state file written before this digest existed carries none, and is
+read the safe way round: every status in it comes back as pending.
 
 ## Development
 
