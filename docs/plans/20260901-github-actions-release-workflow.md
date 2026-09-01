@@ -78,11 +78,11 @@ changes.
 **Files:**
 - Create: `.github/workflows/release.yml`
 
-- [ ] Create `.github/workflows/` and `release.yml` with `name: release` and
+- [x] Create `.github/workflows/` and `release.yml` with `name: release` and
       triggers: `on.push.tags: ['v*']` and `on.workflow_dispatch:`.
-- [ ] Set a top-level `permissions: contents: read` (the least the checkout
+- [x] Set a top-level `permissions: contents: read` (the least the checkout
       needs); the write scope is granted per-job in Task 3, not globally.
-- [ ] Add job `guard` (`runs-on: ubuntu-latest`) with
+- [x] Add job `guard` (`runs-on: ubuntu-latest`) with
       `outputs.version: ${{ steps.resolve.outputs.version }}`. Steps:
       `actions/checkout@v7`, then a `shell: bash` step `id: resolve` that:
       - reads the crate version with
@@ -96,12 +96,12 @@ changes.
       - otherwise (dispatch) sets `version="$(git rev-parse --short HEAD)"` —
         no tag is required, so a manual run never trips the guard;
       - writes `echo "version=$version" >> "$GITHUB_OUTPUT"`.
-- [ ] Start the script with `set -euo pipefail`; read `GITHUB_REF_TYPE` /
+- [x] Start the script with `set -euo pipefail`; read `GITHUB_REF_TYPE` /
       `GITHUB_REF_NAME` as environment variables rather than `${{ }}`
       interpolation, so no expression is spliced into a shell string.
-- [ ] Verify: `actionlint .github/workflows/release.yml` exits 0 (this parses
+- [x] Verify: `actionlint .github/workflows/release.yml` exits 0 (this parses
       the YAML, type-checks the expressions and shellchecks the `run:` body).
-- [ ] Verify: extract the `run:` body to a temp file and confirm `bash -n`
+- [x] Verify: extract the `run:` body to a temp file and confirm `bash -n`
       accepts it; then exercise the version-extraction sed against the real
       `Cargo.toml` in a local shell and confirm it prints exactly `0.1.0`.
 
