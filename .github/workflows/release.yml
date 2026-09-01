@@ -11,6 +11,7 @@ permissions:
 
 jobs:
   guard:
+    if: github.event_name != 'push' || !github.event.deleted
     runs-on: ubuntu-latest
     outputs:
       version: ${{ steps.resolve.outputs.version }}
@@ -22,7 +23,7 @@ jobs:
         run: |
           set -euo pipefail
           cargo_version=$(sed -n '/^version = /{s/^version = "\(.*\)"$/\1/p;q;}' Cargo.toml)
-          if [ "$GITHUB_REF_TYPE" = "tag" ]; then
+          if [ "$GITHUB_EVENT_NAME" = "push" ] && [ "$GITHUB_REF_TYPE" = "tag" ]; then
             version="${GITHUB_REF_NAME#v}"
             if [ "$version" != "$cargo_version" ]; then
               echo "::error::tag $GITHUB_REF_NAME implies version $version but Cargo.toml declares $cargo_version"
@@ -103,7 +104,7 @@ jobs:
 
   release:
     needs: [guard, build]
-    if: github.ref_type == 'tag'
+    if: github.event_name == 'push' && github.ref_type == 'tag' && !github.event.deleted
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -119,6 +120,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ github.ref_name }}
           GH_REPO: ${{ github.repository }}
+          GITHUB_SHA: ${{ github.sha }}
         run: |
           set -euo pipefail
           count=$(find dist -maxdepth 1 -type f | wc -l)
@@ -126,4 +128,10 @@ jobs:
             echo "::error::Expected 5 files in dist, found $count"
             exit 1
           fi
-          gh release create "$TAG" --title "$TAG" --generate-notes dist/*
+          
+          if ! git ls-remote --tags "https://$GH_TOKEN@github.com/$GH_REPO.git" "refs/tags/$TAG" | grep -q "$GITHUB_SHA"; then
+            echo "::error::Remote tag $TAG no longer points to event SHA $GITHUB_SHA"
+            exit 1
+          fi
+
+          gh release create "$TAG" --title "$TAG" --generate-notes --verify-tag dist/*
