@@ -9,6 +9,7 @@ turns a git range into an interactive graph of changed symbols; see
 ## Layout
 
 ```
+.github/workflows/       # release.yml on a v* tag, pr-graph.yml on a PR
 build.rs                 # refuses to compile without web/dist/{index,export}.html
 justfile                 # build-web / build / test
 src/
@@ -134,8 +135,8 @@ whose DNS resolves to 127.0.0.1; the graph is a diff of unpushed work.
 
 `--export <FILE>` provides a second output for the same snapshot. It reads the
 `export.html` shell built by Vite and injects the JSON snapshot in an inline
-script tag. The injection anchor is `</head>`. This produces a single, self-
-contained file that browsers will gladly open from a `file://` URI.
+script tag. The injection anchor is `</head>`. This produces a single,
+self-contained file that browsers will gladly open from a `file://` URI.
 
 ## Adding a LanguageAnalyzer
 
@@ -196,6 +197,25 @@ OS-assigned port the proxy cannot find:
 cargo run -- --port 7777 --assets web/dist   # then npm run dev in web/
 ```
 
+## The two workflows
+
+`release.yml` builds the binaries on a `v*` tag. `pr-graph.yml` downloads the
+Linux binary from the latest release and uploads its `--export` output as a
+per-PR artifact. Two conventions hold in both:
+
+- Actions are pinned to a major tag (`@v7`, `@v8`), never to a SHA.
+- Any step invoking `gh` sets `GH_REPO: ${{ github.repository }}` in its own
+  `env:` block — unconditionally, never left to inference. A step that `cd`s
+  outside the checkout, as `pr-graph.yml`'s download does, has no working
+  directory for `gh` to read a repository from and exits with
+  `failed to run git: fatal: not a git repository`; the steps that do stay in
+  the workspace name it anyway, so the rule needs no judgement call.
+
+`pr-graph.yml` is only ever as current as the latest *published* release —
+drafts do not count — so a flag added after that tag is not in the binary the
+workflow runs. Adding a workflow step that depends on new behavior means
+cutting a release before the workflow can go green.
+
 ## Checks before calling anything done
 
 `build.rs` fails the compile without `web/dist/index.html` and
@@ -207,6 +227,7 @@ cargo test
 cargo clippy --all-targets -- -D warnings
 cargo fmt --check
 cd web && npm test && npm run typecheck
+actionlint .github/workflows/*.yml   # only when a workflow changed
 ```
 
 `just test` runs the two test suites; the linters are not wired into a recipe.
