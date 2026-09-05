@@ -207,7 +207,16 @@ run build` in `web/`, then the stable toolchain and `cargo build --release
 --locked` — because `build.rs` refuses to compile without `web/dist/index.html`
 and `web/dist/export.html`, so the web build must strictly precede every cargo
 step. Those four steps are deliberately duplicated across the two files rather
-than factored into a composite action. Two conventions hold in both:
+than factored into a composite action — not verbatim, though: `release.yml`
+interposes a `Verify native target` check before its cargo step for the
+five-target matrix, and only `pr-graph.yml` spells out `cache: true` on the
+toolchain action, which is that action's default either way.
+`setup-rust-toolchain` also exports `RUSTFLAGS: -D warnings` by default, so a
+PR that merely warns fails `build-graph` and gets no graph — which matches the
+gate below treating warnings as errors. Building the PR takes minutes where the
+old release download took seconds, so `pr-graph.yml` carries a `concurrency`
+group cancelling a superseded run and a `timeout-minutes` on the job. Two
+conventions hold in both:
 
 - Actions are pinned to a major tag (`@v7`, `@v8`), never to a SHA.
 - Any step invoking `gh` sets `GH_REPO: ${{ github.repository }}` in its own

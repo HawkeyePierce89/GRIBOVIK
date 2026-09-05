@@ -8,9 +8,17 @@ on:
 permissions:
   contents: read
 
+# Building the PR takes minutes where downloading a release took seconds, so a
+# superseded run is cancelled rather than left to finish an artifact nobody
+# will open.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
 jobs:
   build-graph:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - name: Checkout
         uses: actions/checkout@v7

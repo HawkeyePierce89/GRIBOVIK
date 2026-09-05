@@ -144,6 +144,40 @@ fn export_with_no_changes_writes_no_file() {
 }
 
 #[test]
+fn export_with_no_changes_exits_zero_through_the_binary() {
+    let tmp = TempDir::new().unwrap();
+    let dir = tmp.path();
+    init_repo(dir);
+    write_file(dir, "src/counter.rs", "pub fn bump() {}\n");
+    let base = commit(dir, "baseline");
+
+    // The PR workflow runs the export under `set -euo pipefail` and lets
+    // `if-no-files-found: ignore` cover the empty case, so a docs-only PR stays
+    // green only as long as the *process* exits 0 and writes nothing. The
+    // library-level test above stops at `cli::prepare` and cannot see that.
+    let out = Command::new(env!("CARGO_BIN_EXE_gribovik"))
+        .current_dir(dir)
+        .args(["--export", "review.html", &base, &base])
+        .output()
+        .expect("the gribovik binary runs");
+
+    assert!(
+        out.status.success(),
+        "gribovik failed: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(
+        stdout.contains("no reviewable changes"),
+        "expected the no-changes message, got: {stdout}"
+    );
+    assert!(
+        !dir.join("review.html").exists(),
+        "export wrote a file for a range with no changes"
+    );
+}
+
+#[test]
 fn export_creates_missing_parent_directories() {
     let tmp = TempDir::new().unwrap();
     let dir = tmp.path();
