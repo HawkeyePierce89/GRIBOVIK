@@ -80,31 +80,31 @@ Dependencies: none added. `similar = "3.2.0"` stays as the base algorithm.
 **Files:**
 - Modify: `src/core/diff.rs`
 
-- [ ] Add a private section to `diff.rs`, headed by a doc comment naming the source
+- [x] Add a private section to `diff.rs`, headed by a doc comment naming the source
       (`git's xdiff/xdiffi.c`, `XDF_INDENT_HEURISTIC`) and stating that the constants are
       empirical and must not be tuned.
-- [ ] Port `get_indent(line: &str) -> i32`: tab advances to the next multiple of 8, space
+- [x] Port `get_indent(line: &str) -> i32`: tab advances to the next multiple of 8, space
       counts 1, other whitespace ignored, first non-whitespace byte ends the scan, clamp at
       `MAX_INDENT = 200`, return `-1` for a line that is entirely whitespace. Lines here
       come from `split_inclusive('\n')` and still carry their terminator — `\n` and `\r`
       are whitespace, so a blank line correctly scores `-1`.
-- [ ] Port `SplitMeasurement { end_of_file, indent, pre_blank, pre_indent, post_blank,
+- [x] Port `SplitMeasurement { end_of_file, indent, pre_blank, pre_indent, post_blank,
       post_indent }` and `measure_split(lines: &[&str], split: usize) -> SplitMeasurement`,
       including the `MAX_BLANKS = 20` cutoff that sets the indent to 0.
-- [ ] Port the weight constants verbatim: `START_OF_FILE_PENALTY 1`, `END_OF_FILE_PENALTY 21`,
+- [x] Port the weight constants verbatim: `START_OF_FILE_PENALTY 1`, `END_OF_FILE_PENALTY 21`,
       `TOTAL_BLANK_WEIGHT -30`, `POST_BLANK_WEIGHT 6`, `RELATIVE_INDENT_PENALTY -4`,
       `RELATIVE_INDENT_WITH_BLANK_PENALTY 10`, `RELATIVE_OUTDENT_PENALTY 24`,
       `RELATIVE_OUTDENT_WITH_BLANK_PENALTY 17`, `RELATIVE_DEDENT_PENALTY 23`,
       `RELATIVE_DEDENT_WITH_BLANK_PENALTY 17`, `INDENT_WEIGHT 60`,
       `INDENT_HEURISTIC_MAX_SLIDING 100`.
-- [ ] Port `SplitScore { effective_indent, penalty }`, `score_add_split` (accumulating into
+- [x] Port `SplitScore { effective_indent, penalty }`, `score_add_split` (accumulating into
       an existing score, as the C does) and `score_cmp` returning the same signed integer.
-- [ ] Write unit tests for the primitives: `get_indent` on spaces, tabs, mixed tab/space,
+- [x] Write unit tests for the primitives: `get_indent` on spaces, tabs, mixed tab/space,
       a blank line, a whitespace-only line, an over-indented line clamped to 200; a
       `measure_split` case at the start of file, at the end of file, and around a run of
       blank lines; a `score_cmp` case where the lower effective indent wins despite a
       higher penalty (the `INDENT_WEIGHT` dominance).
-- [ ] `cargo test` — must pass before Task 2.
+- [x] `cargo test` — must pass before Task 2.
 
 ### Task 2: Rebuild line_diff around changed-flag arrays and compaction
 
