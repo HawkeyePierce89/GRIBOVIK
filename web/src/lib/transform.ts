@@ -17,6 +17,12 @@ export type SymbolNodeData = {
    */
   added: number;
   removed: number;
+  /**
+   * Set by `focus.ts` on the selected card, and by nothing else: an expanded
+   * card draws its diff in an overlay anchored to its collapsed box. Optional
+   * because `toFlow` emits every card collapsed.
+   */
+  expanded?: boolean;
 };
 
 export type SymbolFlowNode = Node<SymbolNodeData, "symbol">;

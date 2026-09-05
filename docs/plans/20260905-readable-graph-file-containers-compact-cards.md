@@ -111,10 +111,10 @@ Decisions taken (with reasons, per the ticket):
 **Files:**
 - Create: `web/src/lib/focus.ts`, `web/src/lib/focus.test.ts`
 
-- [ ] `neighbourhood(edges, id): { nodes: Set<string>; edges: Set<string> }` — the card itself, its direct callers and callees, and every incident edge
-- [ ] `applyFocus(nodes, edges, focusId, expandedId)` returns new node/edge arrays: outside the neighbourhood gets `className: "dimmed"`, incident edges get `"focused"`, containers are never dimmed, the expanded card gets `data.expanded = true` and `zIndex: EXPANDED_Z`; with `focusId === null` and `expandedId === null` it returns the arrays unchanged in content
-- [ ] tests: a selected card keeps itself, its callers and its callees undimmed and dims a third card; incident edges are `focused` and others `dimmed`; containers are never dimmed; the expanded card is the only one with `data.expanded` and an elevated `zIndex`; a null focus dims nothing
-- [ ] run `cd web && npm test && npm run typecheck` — must pass before Task 4
+- [x] `neighbourhood(edges, id): { nodes: Set<string>; edges: Set<string> }` — the card itself, its direct callers and callees, and every incident edge
+- [x] `applyFocus(nodes, edges, focusId, expandedId)` returns new node/edge arrays: outside the neighbourhood gets `className: "dimmed"`, incident edges get `"focused"`, containers are never dimmed, the expanded card gets `data.expanded = true` and `zIndex: EXPANDED_Z`; with `focusId === null` and `expandedId === null` it returns the arrays unchanged in content
+- [x] tests: a selected card keeps itself, its callers and its callees undimmed and dims a third card; incident edges are `focused` and others `dimmed`; containers are never dimmed; the expanded card is the only one with `data.expanded` and an elevated `zIndex`; a null focus dims nothing
+- [x] run `cd web && npm test && npm run typecheck` — must pass before Task 4
 
 ### Task 4: Compact card, expanded overlay, file container component
 
