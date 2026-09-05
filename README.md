@@ -92,8 +92,8 @@ neighbourhood — the card, whatever calls it, and whatever it calls — leaving
 just the conversation that card takes part in. Press Escape, click the same
 card again, or click a container or the empty canvas to collapse and undim.
 Hovering a card previews the same dimming while nothing is selected. Cards are
-reachable from the keyboard too: Tab moves between the ones on screen, and
-Enter or Space opens the one you land on.
+reachable from the keyboard too: Tab moves between them, and Enter or Space
+opens the one you land on.
 
 Edges run caller → callee with an arrowhead at the callee's end; a dashed one
 is a call the resolver was not sure about. The graph pans and zooms, with a

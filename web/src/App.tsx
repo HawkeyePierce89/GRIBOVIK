@@ -262,6 +262,12 @@ function Canvas({ loaded }: { loaded: Loaded }) {
           // keyboard path a card does have lives on `.symbol-row`, which
           // `SymbolNode` makes a real `role="button"`.
           nodesFocusable={false}
+          // And edges are not a keyboard destination either. React Flow makes
+          // every edge a tab stop announced as "Edge from X to Y" — up to 934
+          // of them on the MVP snapshot, interleaved with the card rows that
+          // are the actual keyboard path, and *all* of them the moment a card
+          // is open and culling stands down.
+          edgesFocusable={false}
           // A real branch is hundreds of cards and twice as many edges, and
           // keeping the ones outside the viewport out of the DOM is what keeps
           // the canvas responsive. It has to stand down while a card is open,

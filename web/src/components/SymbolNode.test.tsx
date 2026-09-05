@@ -182,4 +182,35 @@ describe("SymbolNode", () => {
     expect(screen.getByText("file")).toBeDefined();
     expect(document.querySelector(".symbol-kind")).toBeNull();
   });
+
+  it("a file-level card names the basename, not the path its container already shows", () => {
+    draw({
+      snapshot: card({
+        id: "src/core/lang/tsjs.rs::<file>",
+        file: "src/core/lang/tsjs.rs",
+        name: "src/core/lang/tsjs.rs",
+        kind: "file",
+      }),
+      added: 0,
+      removed: 0,
+    });
+
+    const name = document.querySelector(".symbol-name");
+    expect(name?.textContent).toBe("tsjs.rs");
+    // The whole path stays reachable — the card is the only place it is
+    // pinned to the node rather than to the container.
+    expect(name?.getAttribute("title")).toBe("src/core/lang/tsjs.rs");
+  });
+
+  it("a symbol card still shows its qualified name in full", () => {
+    draw({
+      snapshot: card({ name: "Repo::changed_files" }),
+      added: 1,
+      removed: 0,
+    });
+
+    expect(document.querySelector(".symbol-name")?.textContent).toBe(
+      "Repo::changed_files",
+    );
+  });
 });

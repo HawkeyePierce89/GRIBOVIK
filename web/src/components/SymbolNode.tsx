@@ -12,12 +12,25 @@ import { Handle, Position, type NodeProps } from "@xyflow/react";
 import type { SymbolFlowNode } from "../lib/transform";
 import { DiffView } from "./DiffView";
 
+/** Last segment of a git path, which uses `/` on every platform. */
+function basename(path: string): string {
+  return path.slice(path.lastIndexOf("/") + 1);
+}
+
 export function SymbolNode({ data }: NodeProps<SymbolFlowNode>) {
   const node = data.snapshot;
 
   // A file-level node is a catch-all for hunks outside every symbol, so its
   // badge names that rather than repeating the change kind.
   const badge = node.kind === "file" ? "file" : node.change;
+
+  // A symbol card is named by its symbol, but the file-level node's `name`
+  // *is* the file path — which now sits in the container header directly
+  // above it. Showing it again would print the path twice, and print it
+  // through an ellipsis that eats the tail, the end of a path that identifies
+  // it. The basename says which file without repeating the header, and
+  // `title` still carries the whole path.
+  const label = node.kind === "file" ? basename(node.name) : node.name;
 
   return (
     <div className="symbol-node">
@@ -48,7 +61,7 @@ export function SymbolNode({ data }: NodeProps<SymbolFlowNode>) {
             which symbol it is, and `title` keeps the full name reachable when
             the ellipsis takes it. */}
         <span className="symbol-name" title={node.name}>
-          {node.name}
+          {label}
         </span>
         {node.kind !== "file" && <span className="symbol-kind">{node.kind}</span>}
         <span className="symbol-counts">

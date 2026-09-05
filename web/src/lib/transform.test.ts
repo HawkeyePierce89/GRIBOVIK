@@ -296,9 +296,31 @@ describe("toFlow", () => {
         type: EDGE_TYPE,
         animated: false,
         markerEnd: ARROW,
+        selectable: false,
         style: {},
       },
     ]);
+  });
+
+  it("emits every edge unselectable, so a click leaves nothing behind", () => {
+    // React Flow clears an edge selection on a pane click and nowhere else —
+    // a card or container click is gated on the *node* being selectable, and
+    // none are — so a selectable edge would survive Escape and three of the
+    // four dismissal gestures. Unselectable and with no `onEdgeClick`, React
+    // Flow also marks the edge `inactive`, which is `pointer-events: none`:
+    // the 20px hit band stops covering the container background that is the
+    // canvas's pan surface.
+    const { edges } = toFlow(
+      snapshot({
+        nodes: [node("a::one"), node("b::two")],
+        edges: [
+          { from: "a::one", to: "b::two", confidence: "certain" },
+          { from: "b::two", to: "a::one", confidence: "ambiguous" },
+        ],
+      }),
+    );
+
+    expect(edges.map((edge) => edge.selectable)).toEqual([false, false]);
   });
 
   it("points every edge at its callee, so direction survives a back-route", () => {

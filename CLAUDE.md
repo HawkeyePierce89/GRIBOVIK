@@ -44,9 +44,11 @@ web/
     App.tsx + App.test.tsx # fetches, lays out once, owns the interaction model
     styles.css
     types/snapshot.ts      # the other half of the wire contract
-    lib/{transform,layout,elk,snapshot,focus}.ts + *.test.ts
+    lib/{transform,layout,snapshot,focus}.ts + *.test.ts
+    lib/elk.ts             # the elk worker handle; exercised through layout.ts
     lib/stylesheet.test.ts # layout constants and focus classes vs styles.css
-    components/{SymbolNode,FileNode,DiffView,ProgressPanel}.tsx + *.test.tsx
+    components/{SymbolNode,FileNode,ProgressPanel}.tsx + *.test.tsx
+    components/DiffView.tsx  # covered through SymbolNode's tests
 ```
 
 Unit tests live in `#[cfg(test)] mod tests` next to the code they cover;
@@ -275,7 +277,8 @@ every CSS import to an empty string — `?raw` included — and an import-based
 comparison would silently assert against nothing.
 
 The canvas adds a second id space on top of the snapshot's: a container is
-`file:<path>` with every `:` in the path percent-escaped, a card keeps
+`file:<path>` with every `%` and then every `:` in the path percent-escaped
+(`%` first, or the escape itself would not be injective), a card keeps
 `<file>::<qualified_name>`. A card id always carries a `::` and an escaped
 container id never can, which is what keeps the two apart — the prefix alone
 would not, since a path may itself contain a colon and `file:` + `a.ts::b.tsx`
@@ -310,7 +313,20 @@ Flow's Enter/Space handler is gated on `isSelectable`, so leaving it on made
 every node a tab stop announced as activatable and wired to nothing. The
 keyboard path a card does have is its own — `SymbolNode` makes `.symbol-row` a
 `role="button"` whose Enter/Space `click()`s itself, so the key reaches
-`onNodeClick` by the same route a pointer does.
+`onNodeClick` by the same route a pointer does. Edges carry `selectable:
+false` and `edgesFocusable` is off for the same two reasons plus a third: only
+a pane click clears React Flow's *edge* selection — a card or container click
+cannot, being gated on the node's `isSelectable` — so a clicked edge would
+outlive three of the four dismissal gestures. Unselectable and with no
+`onEdgeClick`, React Flow adds its `inactive` class, whose rule is
+`pointer-events: none`, and that is what keeps an edge's 20px invisible hit
+band from swallowing the pan and the click-to-dismiss on the container
+background it is routed across.
+
+A card is named by its symbol, but the synthetic file-level node's `name` *is*
+the file path, which the container header above it now carries — so
+`SymbolNode` shows that one card's basename instead of printing the path twice
+through a tail-eating ellipsis. `title` keeps the whole path.
 
 `focus.ts` derives the appearance rather than storing it: `applyFocus` runs
 over the current arrays on every render, so `useNodesState` keeps whatever a

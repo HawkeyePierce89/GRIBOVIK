@@ -223,6 +223,19 @@ export function toFlow(snapshot: GraphSnapshot): {
       type: EDGE_TYPE,
       animated: false,
       markerEnd: ARROW,
+      // Unselectable for the same reason every node is, plus one of its own.
+      // Nothing reads React Flow's edge selection, and only a pane click
+      // clears it — a card or container click cannot, because that path is
+      // gated on the *node* being selectable, which none are. So a clicked
+      // edge would keep React Flow's `selected` stroke through Escape and
+      // through three of the four dismissal gestures. It also buys back the
+      // pan surface: an edge draws a 20px-wide invisible hit band and its `g`
+      // carries `nopan`, and `INCLUDE_CHILDREN` routes edges straight through
+      // the container background a reviewer grabs to pan. Unselectable and
+      // with no `onEdgeClick`, React Flow marks the edge `inactive`, whose
+      // stylesheet rule is `pointer-events: none` — so the bands stop
+      // swallowing the drag and the click-to-dismiss underneath them.
+      selectable: false,
       style:
         edge.confidence === "ambiguous"
           ? { strokeDasharray: AMBIGUOUS_DASH }
