@@ -109,6 +109,7 @@ describe("toFlow", () => {
         type: "file",
         position: { x: 0, y: 0 },
         zIndex: CONTAINER_Z,
+        selectable: false,
         data: {
           file: "src/a.rs",
           cardCount: 2,
@@ -121,9 +122,31 @@ describe("toFlow", () => {
         type: "file",
         position: { x: 0, y: 0 },
         zIndex: CONTAINER_Z,
+        selectable: false,
         data: { file: "src/b.rs", cardCount: 1, added: 1, removed: 0 },
       },
     ]);
+  });
+
+  // React Flow's `elevateNodesOnSelect` adds 1000 to a selected node's z, and
+  // a container is a translucent box elk routes edges through: selecting one
+  // would hide every edge crossing it behind its own panel. Nothing reads
+  // React Flow's `selected`, so the containers opt out of it entirely.
+  it("makes containers unselectable so clicking one cannot elevate it over the edges", () => {
+    const { nodes } = toFlow(
+      snapshot({ nodes: [node("src/a.rs::alpha"), node("src/b.rs::beta")] }),
+    );
+
+    const containers = nodes.filter((flow) => flow.type === "file");
+    expect(containers).toHaveLength(2);
+    for (const container of containers) {
+      expect(container.selectable).toBe(false);
+    }
+    // Cards keep React Flow's default: they are opaque and are meant to sit
+    // above the edges anyway.
+    for (const card of nodes.filter((flow) => flow.type === "symbol")) {
+      expect(card.selectable).toBeUndefined();
+    }
   });
 
   it("puts every container before its own cards, as React Flow requires", () => {

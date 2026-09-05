@@ -166,6 +166,14 @@ export function toFlow(snapshot: GraphSnapshot): {
       type: "file",
       position: { x: 0, y: 0 },
       zIndex: CONTAINER_Z,
+      // React Flow's own selection is unused — `App` tracks the open card in
+      // its own state — but `elevateNodesOnSelect` is on by default and adds
+      // 1000 to a selected node's z. A container is a translucent box that elk
+      // routes edges *through*, so letting it be selected would paint its
+      // panel over every edge crossing it (including its own file's) until
+      // something else was clicked. `onNodeClick` still fires without this, so
+      // clicking a container to dismiss a diff keeps working.
+      selectable: false,
       data: { file, cardCount: cards.length, added, removed },
     });
     nodes.push(...children);
