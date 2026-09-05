@@ -448,6 +448,14 @@ mod tests {
         include_str!("../../tests/fixtures/ts/modified_method/before.ts");
     const TS_MODIFIED_AFTER: &str =
         include_str!("../../tests/fixtures/ts/modified_method/after.ts");
+    const RUST_SLIDER_BEFORE: &str =
+        include_str!("../../tests/fixtures/rust/slider_attribute/before.rs");
+    const RUST_SLIDER_AFTER: &str =
+        include_str!("../../tests/fixtures/rust/slider_attribute/after.rs");
+    const SWIFT_SLIDER_BEFORE: &str =
+        include_str!("../../tests/fixtures/swift/slider_attribute/before.swift");
+    const SWIFT_SLIDER_AFTER: &str =
+        include_str!("../../tests/fixtures/swift/slider_attribute/after.swift");
     const TSX_BEFORE: &str = include_str!("../../tests/fixtures/ts/component/before.tsx");
     const TSX_AFTER: &str = include_str!("../../tests/fixtures/ts/component/after.tsx");
 
@@ -510,6 +518,57 @@ mod tests {
                 "function",
                 "added",
                 "+5 +6 +7 +8 +9"
+            )]
+        );
+    }
+
+    /// A function inserted between two others that begin on an identical line
+    /// (`#[test]`) has several valid diff placements. `similar` returns the
+    /// fully-slid-down one, which hands the trailing `#[test]` to the *next*
+    /// function and turns an untouched `third` into a modified card. The
+    /// indent-heuristic post-pass in `diff.rs` slides the block back up, so the
+    /// only card is the function that was actually added.
+    #[test]
+    fn an_inserted_rust_test_fn_does_not_spill_into_the_next_one() {
+        let file = FileInput::modified("src/a.rs", RUST_SLIDER_BEFORE, RUST_SLIDER_AFTER);
+        assert_eq!(
+            outline(&[file]),
+            // Lines 6-9 are `second` in full, attribute included; the blank
+            // line 10 is the one leftover, and a blank leftover is filtered,
+            // so no file card either.
+            vec![row("src/a.rs::second", "function", "added", "+6 +7 +8 +9")]
+        );
+    }
+
+    /// The reversed pair *is* the symmetric case: deleting `second` from
+    /// `after.rs` is the same slider with the sides swapped.
+    #[test]
+    fn a_deleted_rust_test_fn_does_not_spill_into_the_next_one() {
+        let file = FileInput::modified("src/a.rs", RUST_SLIDER_AFTER, RUST_SLIDER_BEFORE);
+        assert_eq!(
+            outline(&[file]),
+            vec![row(
+                "src/a.rs::second",
+                "function",
+                "deleted",
+                "-6 -7 -8 -9"
+            )]
+        );
+    }
+
+    /// Swift's analogue: `@MainActor` parses inside the declaration, so it is
+    /// part of the symbol's span and is the shared line the insertion slides
+    /// across.
+    #[test]
+    fn an_inserted_swift_func_does_not_spill_into_the_next_one() {
+        let file = FileInput::modified("src/a.swift", SWIFT_SLIDER_BEFORE, SWIFT_SLIDER_AFTER);
+        assert_eq!(
+            outline(&[file]),
+            vec![row(
+                "src/a.swift::second",
+                "function",
+                "added",
+                "+6 +7 +8 +9"
             )]
         );
     }

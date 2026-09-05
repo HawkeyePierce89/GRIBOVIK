@@ -154,31 +154,31 @@ Dependencies: none added. `similar = "3.2.0"` stays as the base algorithm.
 - Modify: `src/core/nodes.rs` (`#[cfg(test)]` module only)
 - Modify: `src/core/lang/swift.rs` (`#[cfg(test)]` module only)
 
-- [ ] Rust fixture: `before.rs` holds two top-level `#[test] fn` declarations separated by a
+- [x] Rust fixture: `before.rs` holds two top-level `#[test] fn` declarations separated by a
       blank line; `after.rs` inserts a third `#[test] fn` before the second one, again with a
       blank line between. Every function starts with the identical line `#[test]` — the
       condition that makes the block slidable. Keep them small (a handful of lines each).
-- [ ] Swift fixture: the same shape with three top-level `@MainActor func` declarations,
+- [x] Swift fixture: the same shape with three top-level `@MainActor func` declarations,
       since Swift attributes parse inside the declaration and so are part of the symbol's
       span, making `@MainActor` the analogue of `#[test]`.
-- [ ] In `src/core/lang/swift.rs` tests, assert the outline of the Swift fixture in the
+- [x] In `src/core/lang/swift.rs` tests, assert the outline of the Swift fixture in the
       existing `name | qualified_name | kind | start-end` style, so the assumption that the
       span starts on the attribute line fails loudly if it does not hold. (If it does not,
       switch the Swift fixture's shared leading line to an identical `///` doc comment,
       which `lang::leading_line` provably absorbs, and keep the rest of the test as is.)
-- [ ] In `src/core/nodes.rs` tests, for each language: `build_nodes` on
+- [x] In `src/core/nodes.rs` tests, for each language: `build_nodes` on
       `FileInput::modified(path, BEFORE, AFTER)` yields exactly one node — the added
       function — with `ChangeKind::Added` and every line of its diff tagged `add`; the
       pre-existing function produces no node; no file-level node appears (the leftover blank
       line is empty and is filtered).
-- [ ] Symmetric deletion test: `FileInput::modified(path, AFTER, BEFORE)` on the same Rust
+- [x] Symmetric deletion test: `FileInput::modified(path, AFTER, BEFORE)` on the same Rust
       fixture pair yields exactly one node, `ChangeKind::Deleted`, every line tagged `del`.
       Name it so the reversal is obvious in the test name and add a one-line comment saying
       the reversed pair *is* the symmetric case.
-- [ ] While writing the fixtures, cross-check each expectation once against
+- [x] While writing the fixtures, cross-check each expectation once against
       `git diff --no-index --indent-heuristic` on the two fixture files (a development-time
       check run by hand; no git call enters any test).
-- [ ] `cargo test` — must pass before Task 4.
+- [x] `cargo test` — must pass before Task 4.
 
 ### Task 4: The real-pair regression test against git's own output
 
