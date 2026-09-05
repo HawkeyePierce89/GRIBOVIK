@@ -98,13 +98,13 @@ Decisions taken (with reasons, per the ticket):
 **Files:**
 - Modify: `web/src/lib/layout.ts`, `web/src/lib/layout.test.ts`
 
-- [ ] replace `nodeHeight()` with a `CARD_HEIGHT` constant (collapsed card height, in the tens of px, measured against the stylesheet as the old chrome constant was) and export it; delete `CARD_CHROME_HEIGHT`/`DIFF_LINE_HEIGHT`/`MAX_DIFF_HEIGHT`
-- [ ] add `CONTAINER_PADDING` (`elk.padding` with a top inset large enough for the header) and a `HEADER_HEIGHT` constant shared with the stylesheet
-- [ ] `layout(nodes, edges)` builds a two-level elk graph: root children are the containers (each with its `elk.padding` and its cards as `children`), all edges stay at root, and `elk.hierarchyHandling: "INCLUDE_CHILDREN"` is added to `LAYOUT_OPTIONS` — verified locally to return container `x/y/width/height` and child positions relative to their container, which is exactly React Flow's `parentId` convention
-- [ ] read back container `width`/`height` into each container node (`width`/`height` fields) and child `x/y` into card positions; preserve input order and node data as today; keep the worker race, `workerFailure()` and `LAYOUT_TIMEOUT_MS` untouched
-- [ ] `gridLayout(nodes)` places one container per file in a column, sized `NODE_WIDTH + 2*pad` by `HEADER_HEIGHT + n*(CARD_HEIGHT + gap)`, with cards at container-relative positions
-- [ ] tests: children lie inside their container's box; containers are pairwise disjoint (extend the existing `overlapping` helper to work on absolute positions and per-node sizes); no two cards overlap on a `scattered(300)`-style multi-file graph; a cross-container edge still puts the callee's absolute x right of the caller's; card height no longer varies with diff length; grid fallback produces containers with sized boxes and non-overlapping children
-- [ ] run `cd web && npm test && npm run typecheck` — must pass before Task 3
+- [x] replace `nodeHeight()` with a `CARD_HEIGHT` constant (collapsed card height, in the tens of px, measured against the stylesheet as the old chrome constant was) and export it; delete `CARD_CHROME_HEIGHT`/`DIFF_LINE_HEIGHT`/`MAX_DIFF_HEIGHT`
+- [x] add `CONTAINER_PADDING` (`elk.padding` with a top inset large enough for the header) and a `HEADER_HEIGHT` constant shared with the stylesheet
+- [x] `layout(nodes, edges)` builds a two-level elk graph: root children are the containers (each with its `elk.padding` and its cards as `children`), all edges stay at root, and `elk.hierarchyHandling: "INCLUDE_CHILDREN"` is added to `LAYOUT_OPTIONS` — verified locally to return container `x/y/width/height` and child positions relative to their container, which is exactly React Flow's `parentId` convention
+- [x] read back container `width`/`height` into each container node (`width`/`height` fields) and child `x/y` into card positions; preserve input order and node data as today; keep the worker race, `workerFailure()` and `LAYOUT_TIMEOUT_MS` untouched
+- [x] `gridLayout(nodes)` places one container per file in a column, sized `NODE_WIDTH + 2*pad` by `HEADER_HEIGHT + n*(CARD_HEIGHT + gap)`, with cards at container-relative positions
+- [x] tests: children lie inside their container's box; containers are pairwise disjoint (extend the existing `overlapping` helper to work on absolute positions and per-node sizes); no two cards overlap on a `scattered(300)`-style multi-file graph; a cross-container edge still puts the callee's absolute x right of the caller's; card height no longer varies with diff length; grid fallback produces containers with sized boxes and non-overlapping children
+- [x] run `cd web && npm test && npm run typecheck` — must pass before Task 3
 
 ### Task 3: Focus and dimming as a pure module
 

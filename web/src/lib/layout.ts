@@ -2,7 +2,9 @@
  * Graph layout via elkjs.
  *
  * Layered left-to-right reads like a call chain: callers on the left, callees
- * to their right. Layout is async and must be awaited before the nodes are
+ * to their right. Cards are nested one level deep, inside the container node
+ * their file owns, so the whole-graph view is a map of files first and of
+ * symbols second. Layout is async and must be awaited before the nodes are
  * handed to React Flow.
  */
 
@@ -14,15 +16,38 @@ import type { GraphFlowNode } from "./transform";
 export const NODE_WIDTH = 420;
 
 /**
- * Everything on a card except the diff: header, name, padding and gaps.
- * Measured against the stylesheet rather than the DOM — layout runs once,
- * before any card has rendered.
+ * How tall a *collapsed* card renders, measured against the stylesheet rather
+ * than the DOM — layout runs once, before any card exists to measure.
+ * `.symbol-node` is a single row: 0.75rem of padding above and below, a 1px
+ * border on each side, and a badge-height line of content.
+ *
+ * It is a constant, not a function of the diff, and that is the whole point of
+ * the collapsed card: expanding one draws its diff in an overlay anchored to
+ * this box, so the node's own size never changes and the layout never has to
+ * run again. Sizing cards by their diff length is what used to make the canvas
+ * a wall of unequal boxes.
  */
-const CARD_CHROME_HEIGHT = 96;
-/** `.diff-line` is `12px/1.45` monospace. */
-const DIFF_LINE_HEIGHT = 18;
-/** `.diff` scrolls past `max-height: 16rem`, so taller cards do not exist. */
-const MAX_DIFF_HEIGHT = 256;
+export const CARD_HEIGHT = 52;
+
+/**
+ * The container header — file path, card count, `+N −M` — as `.file-header`
+ * renders it. Layout has to reserve it: elk knows only that a container has
+ * padding, and a card placed under the top inset would sit behind the bar.
+ */
+export const HEADER_HEIGHT = 36;
+
+/** Breathing room between a container's border and the cards inside it. */
+const CONTAINER_INSET = 16;
+
+/**
+ * `elk.padding` for a container: the header, plus the same inset all round.
+ * elk's own spelling — `[top=…,left=…,bottom=…,right=…]` — is the only format
+ * the layered algorithm parses for this option.
+ */
+export const CONTAINER_PADDING = `[top=${HEADER_HEIGHT + CONTAINER_INSET},left=${CONTAINER_INSET},bottom=${CONTAINER_INSET},right=${CONTAINER_INSET}]`;
+
+/** The gap the grid fallback leaves between boxes, containers and cards alike. */
+const GRID_GAP = 24;
 
 /**
  * elk in a real web worker, so the tab stays alive while it thinks.
@@ -54,41 +79,84 @@ const LAYOUT_OPTIONS: Record<string, string> = {
   "elk.spacing.nodeNode": "60",
   "elk.spacing.componentComponent": "60",
   "elk.layered.nodePlacement.strategy": "BRANDES_KOEPF",
+  // Every edge lives at the root while its endpoints live inside containers.
+  // Without this, elk treats a container as opaque and refuses to route
+  // through it, and cross-file calls stop influencing where files land.
+  "elk.hierarchyHandling": "INCLUDE_CHILDREN",
 };
 
-/**
- * How tall a card will render. A card's height is driven by how many diff
- * lines it carries, and telling elk that one card is 200px and another 430px
- * is what keeps a long diff from being drawn over its neighbour.
- */
-export function nodeHeight(node: GraphFlowNode): number {
-  if (node.type === "file") return CARD_CHROME_HEIGHT;
-  const lines = node.data.snapshot.diff.length;
-  return (
-    CARD_CHROME_HEIGHT + Math.min(lines * DIFF_LINE_HEIGHT, MAX_DIFF_HEIGHT)
-  );
+/** The cards a container holds, in the order `toFlow` emitted them. */
+function groupByContainer(
+  nodes: GraphFlowNode[],
+): Map<string, GraphFlowNode[]> {
+  const groups = new Map<string, GraphFlowNode[]>();
+  for (const node of nodes) {
+    if (node.type === "file") {
+      if (!groups.has(node.id)) groups.set(node.id, []);
+      continue;
+    }
+    const parent = node.parentId as string;
+    const cards = groups.get(parent);
+    if (cards === undefined) groups.set(parent, [node]);
+    else cards.push(node);
+  }
+  return groups;
+}
+
+/** A container wide and tall enough for `count` cards stacked in a column. */
+function containerBox(count: number): { width: number; height: number } {
+  return {
+    width: NODE_WIDTH + 2 * CONTAINER_INSET,
+    height:
+      HEADER_HEIGHT +
+      CONTAINER_INSET +
+      Math.max(count, 1) * (CARD_HEIGHT + GRID_GAP),
+  };
 }
 
 /**
- * Positions without elk: one column per file, cards stacked in snapshot order.
+ * Positions without elk: one container per file in a row, cards stacked inside
+ * it in snapshot order.
  *
  * Layout is the one part of the load that is purely cosmetic — the diff is
  * readable without it — so a worker that fails to start must not cost the
- * reviewer the whole review. The columns are wide enough that no two cards
+ * reviewer the whole review. The containers are wide enough that no two cards
  * overlap, which is the only property the canvas actually needs.
  */
 export function gridLayout(nodes: GraphFlowNode[]): GraphFlowNode[] {
-  const columns = new Map<string, number>();
-  const nextY = new Map<string, number>();
+  const groups = groupByContainer(nodes);
+  const columnX = new Map<string, number>();
+  let x = 0;
+  for (const parent of groups.keys()) {
+    columnX.set(parent, x);
+    x += containerBox(groups.get(parent)!.length).width + GRID_GAP;
+  }
+
+  const rank = new Map<string, number>();
+  for (const cards of groups.values()) {
+    cards.forEach((card, index) => rank.set(card.id, index));
+  }
+
   return nodes.map((node) => {
-    const file =
-      node.type === "file" ? node.data.file : node.data.snapshot.file;
-    if (!columns.has(file)) columns.set(file, columns.size);
-    const y = nextY.get(file) ?? 0;
-    nextY.set(file, y + nodeHeight(node) + 60);
+    if (node.type === "file") {
+      const box = containerBox(groups.get(node.id)?.length ?? 0);
+      return {
+        ...node,
+        position: { x: columnX.get(node.id) ?? 0, y: 0 },
+        width: box.width,
+        height: box.height,
+      };
+    }
+    // A card's position is relative to its container, which is React Flow's
+    // `parentId` convention and elk's too — the fallback has to agree with the
+    // real layout or a failed worker would scatter the cards across the pane.
+    const index = rank.get(node.id) ?? 0;
     return {
       ...node,
-      position: { x: (columns.get(file) as number) * (NODE_WIDTH + 120), y },
+      position: {
+        x: CONTAINER_INSET,
+        y: HEADER_HEIGHT + CONTAINER_INSET + index * (CARD_HEIGHT + GRID_GAP),
+      },
     };
   });
 }
@@ -118,8 +186,15 @@ function timeout(ms: number): { promise: Promise<never>; cancel: () => void } {
 }
 
 /**
- * Place `nodes` with elk and return them with `position` filled in. Edges are
- * only read, never modified; the returned array preserves the input order.
+ * Place `nodes` with elk and return them with `position` filled in, and
+ * containers additionally with the `width`/`height` elk sized them to. Edges
+ * are only read, never modified; the returned array preserves the input order.
+ *
+ * The elk graph is two levels deep — root holds the containers, a container
+ * holds its cards — while every edge stays at the root, because an edge
+ * between two files has no container to belong to. elk answers in the same
+ * shape: container coordinates are absolute, a card's are relative to the
+ * container holding it, which is exactly what React Flow's `parentId` expects.
  *
  * Rejects if elk does not answer within [`LAYOUT_TIMEOUT_MS`].
  */
@@ -129,13 +204,18 @@ export async function layout(
 ): Promise<GraphFlowNode[]> {
   if (nodes.length === 0) return [];
 
+  const groups = groupByContainer(nodes);
   const graph = {
     id: "root",
     layoutOptions: LAYOUT_OPTIONS,
-    children: nodes.map((node) => ({
-      id: node.id,
-      width: NODE_WIDTH,
-      height: nodeHeight(node),
+    children: [...groups].map(([parent, cards]) => ({
+      id: parent,
+      layoutOptions: { "elk.padding": CONTAINER_PADDING },
+      children: cards.map((card) => ({
+        id: card.id,
+        width: NODE_WIDTH,
+        height: CARD_HEIGHT,
+      })),
     })),
     edges: edges.map((edge) => ({
       id: edge.id,
@@ -150,15 +230,26 @@ export async function layout(
     workerFailure(),
     limit.promise,
   ]).finally(limit.cancel);
-  const placed = new Map(
-    (laid.children ?? []).map((child) => [child.id, child]),
-  );
+
+  const placed = new Map<
+    string,
+    { x?: number; y?: number; width?: number; height?: number }
+  >();
+  for (const container of laid.children ?? []) {
+    placed.set(container.id, container);
+    for (const card of container.children ?? []) placed.set(card.id, card);
+  }
 
   return nodes.map((node) => {
-    const child = placed.get(node.id);
+    const box = placed.get(node.id);
+    const position = { x: box?.x ?? 0, y: box?.y ?? 0 };
+    if (node.type !== "file") return { ...node, position };
+    const fallback = containerBox(groups.get(node.id)?.length ?? 0);
     return {
       ...node,
-      position: { x: child?.x ?? 0, y: child?.y ?? 0 },
+      position,
+      width: box?.width ?? fallback.width,
+      height: box?.height ?? fallback.height,
     };
   });
 }
