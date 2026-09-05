@@ -268,8 +268,14 @@ function Canvas({ loaded }: { loaded: Loaded }) {
           // though: React Flow decides visibility from a node's measured box,
           // and an expanded card's diff is drawn *outside* that box on
           // purpose. Panning the 52px row off-screen would cull the node and
-          // blank the panel the reviewer is still reading. One card at a time
-          // is expanded, so the cost is bounded and only paid while reading.
+          // blank the panel the reviewer is still reading. What that costs is
+          // bounded by the *graph*, not by the one card: opening a card mounts
+          // every node and edge the diff has — measured at 632 nodes and 934
+          // edges, ~114 ms, on the 572-card MVP snapshot — and unmounts them
+          // again on collapse. Acceptable today, and the thing to revisit if a
+          // larger range makes the click feel slow: the way out is to draw the
+          // overlay outside the culled node (a viewport portal) so culling can
+          // stay on unconditionally.
           onlyRenderVisibleElements={selectedId === null}
           // Low enough that `fitView` can actually fit the graph. elk packs
           // the components a diff of a few hundred cards produces into tens

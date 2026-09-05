@@ -264,9 +264,9 @@ dependencies for. A component rendering a React Flow `Handle` — `SymbolNode`
 does, `FileNode` deliberately does not — has to be wrapped in
 `<ReactFlowProvider>` in the test, since the handle reads the instance store
 and throws without one. `App.test.tsx` mounts the whole canvas and needs more
-than that: React Flow measures through `ResizeObserver`, `DOMMatrixReadOnly`
-and `offsetWidth`/`offsetHeight`, none of which jsdom implements, so the file
-stubs all four at the top. Nothing there may assert on a measurement — a test
+than that: React Flow measures through `ResizeObserver`, `DOMMatrixReadOnly`,
+`offsetWidth`/`offsetHeight` and `SVGElement.getBBox`, none of which jsdom
+implements, so the file stubs all five at the top. Nothing there may assert on a measurement — a test
 of `onlyRenderVisibleElements` would be asserting against the stub — which is
 why culling is the one canvas decision left to the manual pass.
 `@types/node` is a dev dependency for `lib/stylesheet.test.ts` alone: it reads
@@ -342,7 +342,11 @@ and stays correct when a node moves.
 The overlay costs the canvas two things that are easy to reintroduce. React
 Flow culls by a node's *measured* box, so `onlyRenderVisibleElements` has to
 stand down while a card is expanded or panning the collapsed row off-screen
-blanks the diff still filling the viewport. And React Flow hangs `onNodeClick`
+blanks the diff still filling the viewport — which means opening a card mounts
+the *whole* graph, 632 nodes and 934 edges and ~114 ms on the 572-card MVP
+snapshot, and unmounts it again on collapse. That is the cost to watch if a
+larger range makes the click feel slow, and the way out of it is a viewport
+portal that draws the overlay outside the culled node. And React Flow hangs `onNodeClick`
 off the wrapper the overlay renders inside, where `nodrag`/`nowheel` opt out of
 the drag and the wheel but not the click — so `.symbol-expanded` stops click
 propagation itself, or selecting a line of the diff closes the card.

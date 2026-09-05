@@ -52,6 +52,12 @@ body {
   display: flex;
   flex: 0 0 220px;
   flex-direction: column;
+  /* Both minimums, and `min-width` is the load-bearing one: a flex item's
+     automatic minimum is its content, and the file rows are `nowrap` paths, so
+     without this the panel is sized by the longest path in the diff — twice
+     the 220px basis on a real branch, taken out of the canvas — and
+     `.file-row-path` never overflows, which makes its eliding dead code. */
+  min-width: 0;
   min-height: 0;
   padding: 1rem;
   background: var(--panel);
