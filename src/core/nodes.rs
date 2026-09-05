@@ -456,6 +456,10 @@ mod tests {
         include_str!("../../tests/fixtures/swift/slider_attribute/before.swift");
     const SWIFT_SLIDER_AFTER: &str =
         include_str!("../../tests/fixtures/swift/slider_attribute/after.swift");
+    const RUST_EXPORT_HTML_BEFORE: &str =
+        include_str!("../../tests/fixtures/rust/slider_export_html/before.rs");
+    const RUST_EXPORT_HTML_AFTER: &str =
+        include_str!("../../tests/fixtures/rust/slider_export_html/after.rs");
     const TSX_BEFORE: &str = include_str!("../../tests/fixtures/ts/component/before.tsx");
     const TSX_AFTER: &str = include_str!("../../tests/fixtures/ts/component/after.tsx");
 
@@ -570,6 +574,40 @@ mod tests {
                 "added",
                 "+6 +7 +8 +9"
             )]
+        );
+    }
+
+    /// The pair from the ticket: `tests/export_html.rs` at `126e29d~1` and
+    /// `126e29d`, where the added test function begins on the same `#[test]`
+    /// line as the one below it. With the block slid all the way down, the
+    /// stray `#[test]` falls inside the *untouched*
+    /// `export_creates_missing_parent_directories` and invents a modified card
+    /// for it, while the function that was actually added shows its own
+    /// attribute as context.
+    #[test]
+    fn the_export_html_pair_cards_only_the_function_that_was_added() {
+        let file = FileInput::modified(
+            "tests/export_html.rs",
+            RUST_EXPORT_HTML_BEFORE,
+            RUST_EXPORT_HTML_AFTER,
+        );
+        let (nodes, _) = build_nodes(slice::from_ref(&file));
+
+        let added = nodes
+            .iter()
+            .find(|node| {
+                node.id
+                    == "tests/export_html.rs::export_with_no_changes_exits_zero_through_the_binary"
+            })
+            .expect("the added test function gets a card");
+        assert_eq!(added.change, ChangeKind::Added);
+
+        assert!(
+            !nodes.iter().any(|node| node
+                .id
+                .ends_with("::export_creates_missing_parent_directories")),
+            "the untouched function must not be carded; got {:?}",
+            nodes.iter().map(|node| &node.id).collect::<Vec<_>>()
         );
     }
 

@@ -187,25 +187,25 @@ Dependencies: none added. `similar = "3.2.0"` stays as the base algorithm.
 - Modify: `src/core/diff.rs` (`#[cfg(test)]` module only)
 - Modify: `src/core/nodes.rs` (`#[cfg(test)]` module only)
 
-- [ ] Materialise the fixtures with
+- [x] Materialise the fixtures with
       `git show 126e29d~1:tests/export_html.rs > tests/fixtures/rust/slider_export_html/before.rs`
       and `git show 126e29d:tests/export_html.rs > .../after.rs` (197 and 231 lines).
-- [ ] Materialise the expectation with
+- [x] Materialise the expectation with
       `git diff --no-index --indent-heuristic --unified=100000 before.rs after.rs > expected.diff`,
       so the whole file appears and the comparison covers context lines too. Leave the file
       exactly as git wrote it and document its provenance in the test's doc comment instead
       (the exact command and the revision pair).
-- [ ] Add a test in `diff.rs` that `include_str!`s the three files, parses `expected.diff`
+- [x] Add a test in `diff.rs` that `include_str!`s the three files, parses `expected.diff`
       into `(tag, old_line, new_line)` triples — skipping the `diff`/`index`/`---`/`+++`
       lines, reading the starting line numbers from the single `@@` header and then
       advancing per line for ` `, `-`, `+` — and asserts equality against `line_diff`'s
       output projected to the same triples. The comparison is on tags and line numbers, not
       on hunk headers or text.
-- [ ] Add a test in `nodes.rs` on the same pair: `build_nodes` produces a node for
+- [x] Add a test in `nodes.rs` on the same pair: `build_nodes` produces a node for
       `export_with_no_changes_exits_zero_through_the_binary` with `ChangeKind::Added`, and
       **no** node whose id ends in `export_creates_missing_parent_directories` — the exact
       defect from the ticket, caught in CI rather than by hand.
-- [ ] `cargo test` — must pass before Task 5.
+- [x] `cargo test` — must pass before Task 5.
 
 ### Task 5: Document the behaviour in CLAUDE.md
 

@@ -1094,4 +1094,89 @@ mod tests {
         assert!(score_cmp(&same_indent, &shallow) < 0);
         assert_eq!(score_cmp(&shallow, &shallow), 0);
     }
+
+    const EXPORT_HTML_BEFORE: &str =
+        include_str!("../../tests/fixtures/rust/slider_export_html/before.rs");
+    const EXPORT_HTML_AFTER: &str =
+        include_str!("../../tests/fixtures/rust/slider_export_html/after.rs");
+    const EXPORT_HTML_EXPECTED: &str =
+        include_str!("../../tests/fixtures/rust/slider_export_html/expected.diff");
+
+    /// Read a unified diff back into `(tag, old_line, new_line)` triples.
+    ///
+    /// Only ever fed the one fixture below, so it handles exactly what git
+    /// wrote there: the `diff`/`index`/`---`/`+++` preamble is skipped, the
+    /// single `@@` header supplies the two starting line numbers, and every
+    /// line after it advances the side(s) it belongs to.
+    fn parse_unified(text: &str) -> Vec<(&'static str, Option<u32>, Option<u32>)> {
+        let mut out = Vec::new();
+        let (mut old, mut new) = (0u32, 0u32);
+        let mut in_hunk = false;
+
+        for line in text.lines() {
+            if let Some(rest) = line.strip_prefix("@@ -") {
+                let (old_part, rest) = rest.split_once(" +").expect("@@ header has both sides");
+                let (new_part, _) = rest.split_once(" @@").expect("@@ header is terminated");
+                let start = |spec: &str| -> u32 {
+                    spec.split(',')
+                        .next()
+                        .expect("a line spec starts with a number")
+                        .parse()
+                        .expect("a line spec starts with a number")
+                };
+                old = start(old_part);
+                new = start(new_part);
+                in_hunk = true;
+                continue;
+            }
+            if !in_hunk {
+                continue;
+            }
+            match line.as_bytes().first() {
+                Some(b' ') => {
+                    out.push(("context", Some(old), Some(new)));
+                    old += 1;
+                    new += 1;
+                }
+                Some(b'-') => {
+                    out.push(("del", Some(old), None));
+                    old += 1;
+                }
+                Some(b'+') => {
+                    out.push(("add", None, Some(new)));
+                    new += 1;
+                }
+                // "\ No newline at end of file" carries no line of its own.
+                _ => {}
+            }
+        }
+        out
+    }
+
+    /// The pair from the ticket, checked against git's own answer.
+    ///
+    /// The fixtures are `tests/export_html.rs` at `126e29d~1` and `126e29d`,
+    /// materialised with `git show <rev>:tests/export_html.rs`. `expected.diff`
+    /// is verbatim
+    /// `git diff --no-index --indent-heuristic --unified=100000 before.rs after.rs`
+    /// — the whole file in one hunk, so context lines are compared too. Only
+    /// tags and line numbers are compared; hunk headers and text are git's
+    /// formatting, not our contract.
+    #[test]
+    fn the_export_html_pair_matches_gits_indent_heuristic_output() {
+        let ours: Vec<(&'static str, Option<u32>, Option<u32>)> =
+            line_diff(EXPORT_HTML_BEFORE, EXPORT_HTML_AFTER)
+                .iter()
+                .map(|line| {
+                    let tag = match line.tag {
+                        DiffTag::Add => "add",
+                        DiffTag::Del => "del",
+                        DiffTag::Context => "context",
+                    };
+                    (tag, line.old_line, line.new_line)
+                })
+                .collect();
+
+        assert_eq!(ours, parse_unified(EXPORT_HTML_EXPECTED));
+    }
 }
