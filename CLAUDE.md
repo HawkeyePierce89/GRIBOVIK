@@ -25,13 +25,13 @@ src/
     mod.rs               # build_snapshot(): the core's single entry point
     error.rs             # AnalysisError (thiserror)
     snapshot.rs          # the wire contract
-    diff.rs              # LineRange, line_diff / slice_diff over `similar`
+    diff.rs              # LineRange, line_diff / slice_diff; git's indent heuristic
     nodes.rs             # symbols x hunks -> cards
     edges.rs             # call-name resolution
     lang/mod.rs          # LanguageAnalyzer trait + extension registry
     lang/{rust,swift,tsjs}.rs
 tests/
-  fixtures/{rust,swift,ts}/<case>/{before,after}.<ext>
+  fixtures/{rust,swift,ts}/<case>/{before,after}.<ext>  # + expected.diff where git is the oracle
   export_html.rs         # end-to-end temp repo -> single file export
   git_cli.rs             # temp repos through the git wrapper
   grammars_link.rs       # all three tree-sitter grammars load
@@ -78,6 +78,16 @@ Degradation beats failure in the analysis path. A file the parser rejects
 becomes a file-level card carrying the whole diff plus a warning in
 `meta.warnings`. Only things the reviewer must act on — not a git repository,
 unknown revision — abort the run.
+
+The same rule covers a broken *internal* invariant, not just rejected input.
+Where git's `xdiff` calls `XDL_BUG`, `diff.rs`'s port `debug_assert!`s the
+group-sync invariant and, in release, stops compacting and returns the diff as
+it stands. Sliding a change group is a semantics-preserving rewrite, so a
+half-compacted pair of flag arrays is still a correct diff — where an `unwrap`
+that only holds if the port is bug-free would panic in the reviewer's face.
+Note this one degradation writes no `meta.warnings` entry: `core::diff` has no
+handle on the snapshot's warning list, and the only way to reach the branch is
+a bug in the port itself.
 
 ## The two-sided GraphSnapshot contract
 
@@ -132,10 +142,29 @@ leading `#[test]` to the *next* symbol's span, which turns an untouched
 function into a "modified" card and strips the added function of its own
 attribute. The weights are git's empirical constants and must not be tuned
 locally — GitHub renders the same placement, and a reviewer comparing the two
-should see one answer. `tests/fixtures/rust/slider_export_html/` pins it against
-`expected.diff`, produced by `git diff --no-index --indent-heuristic` on the
-real pair the defect was found in; `tests/fixtures/{rust,swift}/slider_attribute/`
-pin the card-level consequence.
+should see one answer.
+
+That agreement is bounded, and the bound is worth knowing before anyone goes
+looking for a bug in the scoring. The port decides *where a slidable block
+lands*; it does not decide *which equal lines match*, and that comes from
+`similar`'s Myers, not xdiff's. On repetitive input the two pick different —
+equally minimal — edit scripts, and the compaction pass then has a different
+starting point: git's first pass aligns the old side against the new side's
+*uncompacted* flags, so a hunk that changes both sides can still land a line
+off. `line_diff("struct S;\nfn a() {\nfn a() {\n        deep();\n", "struct
+S;\nfn a() {\n        deep();\n        deep();\n")` is the smallest case —
+git pairs the deletion with the addition, we report them a line apart. Closing
+that gap means porting `xdl_do_diff` too, which is a separate job. So a
+GRIBOVIK-vs-GitHub difference is not by itself evidence the weights are wrong;
+check whether the two sides agree on the edit script first.
+
+`tests/fixtures/rust/slider_export_html/` pins the placement against
+`expected.diff`, verbatim
+`git diff --no-index --indent-heuristic --unified=100000 before.rs after.rs`
+over `tests/export_html.rs` at `126e29d~1` and `126e29d` — one hunk, so context
+lines are compared too, and the fixture's blank context lines are a single
+space that a trailing-whitespace strip would destroy.
+`tests/fixtures/{rust,swift,ts}/slider_attribute/` pin the card-level consequence.
 
 There is deliberately no assertion that an `added` card contains only `add`
 lines and a `deleted` card only `del` lines. The half of that is true by

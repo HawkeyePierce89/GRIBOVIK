@@ -4,7 +4,7 @@
 //! [`DiffLine`]s carrying both sides' line numbers, and a way to slice the file
 //! diff down to one symbol's span.
 
-use similar::{ChangeTag, TextDiff};
+use similar::{DiffOp, TextDiff};
 
 use crate::core::snapshot::{DiffLine, DiffTag};
 
@@ -61,22 +61,16 @@ pub fn line_diff(old: &str, new: &str) -> Vec<DiffLine> {
         .diff_slices(&old_lines, &new_lines);
 
     // `similar` hands back an edit script; git's compaction works on the pair
-    // of changed-flag arrays behind it, so rebuild them.
+    // of changed-flag arrays behind it, so rebuild them. A non-`Equal` op
+    // carries the exact range it touches on each side — empty on the side a
+    // pure insertion or deletion leaves alone — so no per-line bookkeeping is
+    // needed and no line can be silently dropped.
     let mut changed_old = vec![false; old_lines.len()];
     let mut changed_new = vec![false; new_lines.len()];
-    for change in diff.iter_all_changes() {
-        match change.tag() {
-            ChangeTag::Delete => {
-                if let Some(i) = change.old_index() {
-                    changed_old[i] = true;
-                }
-            }
-            ChangeTag::Insert => {
-                if let Some(j) = change.new_index() {
-                    changed_new[j] = true;
-                }
-            }
-            ChangeTag::Equal => {}
+    for op in diff.ops() {
+        if !matches!(op, DiffOp::Equal { .. }) {
+            changed_old[op.old_range()].fill(true);
+            changed_new[op.new_range()].fill(true);
         }
     }
 
@@ -638,7 +632,11 @@ fn compact(lines: &[&str], changed: &mut [bool], other_changed: &[bool]) {
         }
     }
 
-    debug_assert!(!go.next(other_changed), "group sync broken at end of file");
+    // Hoisted out of the assertion: `debug_assert!` is compiled out in release,
+    // and a cursor move inside one would make the two profiles walk `go` a
+    // different number of times.
+    let other_ran_out = !go.next(other_changed);
+    debug_assert!(other_ran_out, "group sync broken at end of file");
 }
 
 /// The `end` index this group should be slid to, per the indent heuristic.
@@ -804,6 +802,16 @@ mod tests {
                 ("add", None, Some(1), "  indented  "),
                 ("add", None, Some(2), "no trailing newline"),
             ]
+        );
+    }
+
+    /// The last line of a file can end in a bare `CR` with no `\n` to strip it,
+    /// and that terminator must not survive into the card's text.
+    #[test]
+    fn a_final_bare_carriage_return_is_stripped_too() {
+        assert_eq!(
+            render(&line_diff("", "a\nlast\r")),
+            vec![("add", None, Some(1), "a"), ("add", None, Some(2), "last")]
         );
     }
 
@@ -974,6 +982,24 @@ mod tests {
         );
     }
 
+    /// The other side's change can also already be facing the group at the
+    /// *top* of its slide range, before it has slid down at all — here the
+    /// inserted `a` reaches the deletion of `X` only by sliding as far up as it
+    /// can go. Cross-checked against `git diff --no-index --indent-heuristic`.
+    #[test]
+    fn a_slide_already_facing_the_other_sides_change_at_its_top_stays_there() {
+        assert_eq!(
+            render(&line_diff("X\na\na\nz\n", "a\na\na\nz\n")),
+            vec![
+                ("del", Some(1), None, "X"),
+                ("add", None, Some(1), "a"),
+                ("context", Some(2), Some(2), "a"),
+                ("context", Some(3), Some(3), "a"),
+                ("context", Some(4), Some(4), "z"),
+            ]
+        );
+    }
+
     #[test]
     fn get_indent_counts_spaces_and_tab_stops() {
         assert_eq!(get_indent("x\n"), 0);
@@ -1054,6 +1080,65 @@ mod tests {
         assert_eq!(above.pre_indent, 0);
         assert_eq!(above.post_blank, 1);
         assert_eq!(above.post_indent, 4);
+    }
+
+    /// A blank run longer than [`MAX_BLANKS`] stops the scan on either side:
+    /// the count sticks at the bound and the indent is reported as `0` rather
+    /// than that of the non-blank line beyond it. Without the clamp the loops
+    /// are unbounded over a long run of blank lines.
+    #[test]
+    fn measure_split_stops_counting_after_max_blanks() {
+        // "a", 25 blank lines, "    b" — a run five longer than the bound.
+        let mut lines = vec!["a\n"];
+        lines.extend(std::iter::repeat_n("\n", 25));
+        lines.push("    b\n");
+
+        // Scanning upwards from the non-blank line at the bottom.
+        let below = measure_split(&lines, 26);
+        assert_eq!(below.indent, 4);
+        assert_eq!(below.pre_blank, MAX_BLANKS);
+        assert_eq!(below.pre_indent, 0);
+
+        // Scanning downwards from the non-blank line at the top.
+        let above = measure_split(&lines, 0);
+        assert_eq!(above.indent, 0);
+        assert_eq!(above.post_blank, MAX_BLANKS);
+        assert_eq!(above.post_indent, 0);
+    }
+
+    /// Every candidate position scores the same in a run of identical lines,
+    /// and `score_cmp`'s `<= 0` tie-break has to leave the group at the
+    /// *latest* of them — git's answer, and the one `similar` already produced.
+    #[test]
+    fn best_indent_shift_keeps_the_latest_of_equally_good_positions() {
+        let lines = ["x\n"; 10];
+        assert_eq!(best_indent_shift(&lines, 8, 1, 4), 8);
+    }
+
+    /// A group is never slid further up than its own length: the two splits
+    /// being measured are `groupsize` apart and must not cross. Lines 0..17
+    /// here are unindented and would score better, but sit out of reach.
+    #[test]
+    fn best_indent_shift_never_reaches_past_the_groups_own_length() {
+        let mut lines = vec!["a\n"; 17];
+        lines.extend(std::iter::repeat_n("        b\n", 13));
+
+        assert_eq!(best_indent_shift(&lines, 20, 2, 0), 20 - 2 - 1);
+    }
+
+    /// [`INDENT_HEURISTIC_MAX_SLIDING`] bounds the search independently of the
+    /// group's length, which is the only thing keeping the scan off a group of
+    /// hundreds of slidable lines. Without it the shallow region below 150 is
+    /// reachable and wins.
+    #[test]
+    fn best_indent_shift_stops_at_the_max_sliding_bound() {
+        let mut lines = vec!["a\n"; 150];
+        lines.extend(std::iter::repeat_n("        b\n", 150));
+
+        assert_eq!(
+            best_indent_shift(&lines, 250, 120, 0),
+            250 - INDENT_HEURISTIC_MAX_SLIDING as usize
+        );
     }
 
     #[test]
@@ -1147,7 +1232,12 @@ mod tests {
                     new += 1;
                 }
                 // "\ No newline at end of file" carries no line of its own.
-                _ => {}
+                Some(b'\\') => {}
+                // A blank context line is written as a single space, so an
+                // empty line here means the fixture lost its trailing
+                // whitespace. Skipping it silently would desynchronise both
+                // counters and report a slider bug that is not there.
+                other => panic!("malformed fixture line: {other:?} in {line:?}"),
             }
         }
         out

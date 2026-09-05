@@ -456,6 +456,9 @@ mod tests {
         include_str!("../../tests/fixtures/swift/slider_attribute/before.swift");
     const SWIFT_SLIDER_AFTER: &str =
         include_str!("../../tests/fixtures/swift/slider_attribute/after.swift");
+    const TS_SLIDER_BEFORE: &str =
+        include_str!("../../tests/fixtures/ts/slider_attribute/before.ts");
+    const TS_SLIDER_AFTER: &str = include_str!("../../tests/fixtures/ts/slider_attribute/after.ts");
     const RUST_EXPORT_HTML_BEFORE: &str =
         include_str!("../../tests/fixtures/rust/slider_export_html/before.rs");
     const RUST_EXPORT_HTML_AFTER: &str =
@@ -577,6 +580,39 @@ mod tests {
         );
     }
 
+    /// TypeScript is the third language whose spans nest, and the shared line
+    /// the block slides across is a `/** Runs it. */` doc comment rather than
+    /// an attribute. Slid all the way down it would end on `third`'s comment,
+    /// carding the untouched `third`; the heuristic puts it on `second`, whose
+    /// card is lines 7-10 — comment through closing brace.
+    ///
+    /// The enclosing `Service` still takes the blank separator at line 11: the
+    /// empty-leftover exception is the *file* card's, and a class card holding
+    /// only class-level scaffolding is what
+    /// `a_typescript_class_does_not_repeat_its_methods_changes` already pins.
+    /// Cross-checked against `git diff --no-index --indent-heuristic`.
+    #[test]
+    fn an_inserted_ts_method_does_not_spill_into_the_next_one() {
+        let file = FileInput::modified("src/a.ts", TS_SLIDER_BEFORE, TS_SLIDER_AFTER);
+        assert_eq!(
+            outline(&[file]),
+            vec![
+                row(
+                    "src/a.ts::Service",
+                    "class",
+                    "modified",
+                    "=1/1 =6/6 +11 =11/16"
+                ),
+                row(
+                    "src/a.ts::Service.second",
+                    "method",
+                    "added",
+                    "+7 +8 +9 +10"
+                ),
+            ]
+        );
+    }
+
     /// The pair from the ticket: `tests/export_html.rs` at `126e29d~1` and
     /// `126e29d`, where the added test function begins on the same `#[test]`
     /// line as the one below it. With the block slid all the way down, the
@@ -593,21 +629,37 @@ mod tests {
         );
         let (nodes, _) = build_nodes(slice::from_ref(&file));
 
-        let added = nodes
-            .iter()
-            .find(|node| {
-                node.id
-                    == "tests/export_html.rs::export_with_no_changes_exits_zero_through_the_binary"
-            })
-            .expect("the added test function gets a card");
+        // The added function is the only thing that changed, so it is the only
+        // card — no card for the untouched
+        // `export_creates_missing_parent_directories` below it, and no
+        // file-level card for a leftover line.
+        assert_eq!(
+            nodes
+                .iter()
+                .map(|node| node.id.as_str())
+                .collect::<Vec<_>>(),
+            vec!["tests/export_html.rs::export_with_no_changes_exits_zero_through_the_binary"]
+        );
+
+        let added = &nodes[0];
         assert_eq!(added.change, ChangeKind::Added);
 
+        // Lines 146-178 of `after.rs`: the `#[test]` attribute through the
+        // closing brace, every one of them an addition. The attribute being
+        // context instead is the other half of the defect — the added function
+        // borrowing the line above it rather than owning its own.
+        assert_eq!(
+            added.diff.first().map(|line| (line.tag, line.new_line)),
+            Some((DiffTag::Add, Some(146)))
+        );
+        assert_eq!(
+            added.diff.last().map(|line| (line.tag, line.new_line)),
+            Some((DiffTag::Add, Some(178)))
+        );
         assert!(
-            !nodes.iter().any(|node| node
-                .id
-                .ends_with("::export_creates_missing_parent_directories")),
-            "the untouched function must not be carded; got {:?}",
-            nodes.iter().map(|node| &node.id).collect::<Vec<_>>()
+            added.diff.iter().all(|line| line.tag == DiffTag::Add),
+            "every line of the added card is an addition; got {:?}",
+            render(added)
         );
     }
 
