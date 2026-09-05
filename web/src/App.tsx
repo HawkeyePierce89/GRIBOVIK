@@ -37,11 +37,12 @@ const nodeTypes = { symbol: SymbolNode, file: FileNode } satisfies NodeTypes;
 /**
  * What the minimap paints a node with.
  *
- * Its default reads the node's own background, and a container's is a
- * translucent panel over the canvas — which the minimap composites to nearly
- * black, so a graph of containers turns the map into a slab. Painting the
- * containers as outlines of where the files are, and the cards a shade
- * brighter, is what keeps the map legible.
+ * Its default is one flat colour for every node: React Flow reads a node's
+ * inline `style` prop for a fill and falls back to a single stylesheet
+ * variable, and `transform.ts` gives no node a `style`. A container is a
+ * rectangle drawn under its own cards, so painting both the same shade fills
+ * the map with featureless file-shaped slabs. Two shades keep the two levels
+ * apart — where the files are, and where the cards inside them are.
  */
 function minimapColor(node: Node): string {
   return node.type === "file" ? "#2c3245" : "#4a5573";

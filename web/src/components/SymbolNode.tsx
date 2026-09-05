@@ -54,6 +54,12 @@ export function SymbolNode({ data }: NodeProps<SymbolFlowNode>) {
           if (event.key !== "Enter" && event.key !== " ") return;
           // Space scrolls the page otherwise, and the canvas is the page.
           event.preventDefault();
+          // A held Enter autorepeats, and each repeat toggles the selection —
+          // which toggles `onlyRenderVisibleElements` and so mounts and
+          // unmounts the whole graph, ~114 ms a time on the MVP snapshot.
+          // Leaning on the key would freeze the canvas rather than open a
+          // card.
+          if (event.repeat) return;
           event.currentTarget.click();
         }}
       >

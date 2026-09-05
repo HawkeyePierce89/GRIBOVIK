@@ -130,6 +130,21 @@ describe("SymbolNode", () => {
     }
   });
 
+  it("ignores an autorepeated Enter, so a held key cannot thrash the canvas", () => {
+    // Each toggle of the selection flips `onlyRenderVisibleElements` and so
+    // mounts and unmounts the whole graph; a held key would do that at the
+    // repeat rate rather than open one card.
+    const clicked = vi.fn();
+    draw({ snapshot: card(), added: 1, removed: 0 }, clicked);
+    const row = screen.getByRole("button");
+
+    fireEvent.keyDown(row, { key: "Enter" });
+    fireEvent.keyDown(row, { key: "Enter", repeat: true });
+    fireEvent.keyDown(row, { key: "Enter", repeat: true });
+
+    expect(clicked).toHaveBeenCalledTimes(1);
+  });
+
   it("leaves other keys alone, so Escape still reaches the window", () => {
     const clicked = vi.fn();
     draw({ snapshot: card(), added: 1, removed: 0 }, clicked);
