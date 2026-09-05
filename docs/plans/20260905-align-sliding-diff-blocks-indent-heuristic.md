@@ -232,13 +232,13 @@ Dependencies: none added. `similar = "3.2.0"` stays as the base algorithm.
 
 ### Task 6: Verify acceptance criteria
 
-- [ ] `cargo test`
-- [ ] `cargo clippy --all-targets -- -D warnings`
-- [ ] `cargo fmt --check`
-- [ ] `cd web && npm test && npm run typecheck` (unchanged, but the gate is part of the
+- [x] `cargo test`
+- [x] `cargo clippy --all-targets -- -D warnings`
+- [x] `cargo fmt --check`
+- [x] `cd web && npm test && npm run typecheck` (unchanged, but the gate is part of the
       ticket; `just build-web` first if `web/dist` is absent, since `build.rs` refuses to
       compile without `web/dist/index.html` and `web/dist/export.html`)
-- [ ] Confirm no fixture, serde round-trip or integration test regressed and that
+- [x] Confirm no fixture, serde round-trip or integration test regressed and that
       `tests/integration_repo.rs` and `tests/export_html.rs` still pass unchanged
 
 ## Post-Completion (manual verification)
