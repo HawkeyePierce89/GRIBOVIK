@@ -212,7 +212,7 @@ Dependencies: none added. `similar = "3.2.0"` stays as the base algorithm.
 **Files:**
 - Modify: `CLAUDE.md`
 
-- [ ] In the "two-sided GraphSnapshot contract" section (the paragraph block about diffs and
+- [x] In the "two-sided GraphSnapshot contract" section (the paragraph block about diffs and
       cards), add a short paragraph: the line diff post-processes slider ambiguity the way
       git does — a run of inserted or deleted lines that begins and ends on a line identical
       to its neighbour has several valid placements, `similar` returns the fully-slid-down
@@ -221,14 +221,14 @@ Dependencies: none added. `similar = "3.2.0"` stays as the base algorithm.
       placement: a misplaced block hands lines to a neighbouring symbol, so the difference
       is a false review card, not a cosmetic one. Note that the constants are git's and are
       not to be tuned locally, and name the fixture that pins the behaviour.
-- [ ] Add a second short paragraph recording the deliberate absence of a strict
+- [x] Add a second short paragraph recording the deliberate absence of a strict
       added/deleted-versus-tag assertion: an `added` card carries no `del` lines and a
       `deleted` card no `add` lines by construction of `slice_diff`, but **context lines on
       an added or deleted card are legitimate** — a renamed `impl`, class or `extension`
       gives every member a slice of pure context, and a symbol sharing its closing brace
       with the previous revision keeps that brace as context. The slider fixtures, not a
       `debug_assert!`, are what catch a misalignment.
-- [ ] No test item: documentation only. `cargo test` must still pass.
+- [x] No test item: documentation only. `cargo test` must still pass.
 
 ### Task 6: Verify acceptance criteria
 

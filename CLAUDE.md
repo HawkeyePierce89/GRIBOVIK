@@ -119,6 +119,34 @@ and counting it as reviewed because the symbol claimed part of it is how
 changed imports disappear from a review. The one deliberate exception is a
 blank line between symbols.
 
+Which lines a card claims depends on where the line diff *puts* a change, and
+that placement is ambiguous whenever a run of inserted or deleted lines begins
+and ends on a line identical to its neighbour — an inserted `#[test] fn` between
+two others can equally be reported one function earlier or later. `similar`
+returns the fully-slid-down placement (git's `--no-indent-heuristic`), so
+`diff.rs` slides the block back with a faithful port of git's
+`XDF_INDENT_HEURISTIC` split scoring from `xdiff/xdiffi.c`, run over
+changed-flag arrays after `similar` and before `DiffLine`s are emitted. For
+GRIBOVIK this is not cosmetic: a block placed one line too low hands its
+leading `#[test]` to the *next* symbol's span, which turns an untouched
+function into a "modified" card and strips the added function of its own
+attribute. The weights are git's empirical constants and must not be tuned
+locally — GitHub renders the same placement, and a reviewer comparing the two
+should see one answer. `tests/fixtures/rust/slider_export_html/` pins it against
+`expected.diff`, produced by `git diff --no-index --indent-heuristic` on the
+real pair the defect was found in; `tests/fixtures/{rust,swift}/slider_attribute/`
+pin the card-level consequence.
+
+There is deliberately no assertion that an `added` card contains only `add`
+lines and a `deleted` card only `del` lines. The half of that is true by
+construction — `slice_diff` on a range present in one revision only cannot
+produce the other tag — but **context lines on an added or deleted card are
+legitimate**: a renamed `impl`, class or `extension` hands every member a slice
+of pure context, and a symbol sharing its closing brace with the previous
+revision keeps that brace as context. A `debug_assert!` on the strict form
+would fire on correct diffs, so the slider fixtures above, not an assertion,
+are what catch a misalignment.
+
 ## The HTTP API
 
 One route, and everything else falls through to the SPA assets (an unmatched
