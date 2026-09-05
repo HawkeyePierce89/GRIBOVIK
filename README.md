@@ -66,13 +66,31 @@ altogether and named in the same banner.
 
 ## In the browser
 
-The left panel names the review and counts the cards — changed symbols plus
-the file-level catch-alls.
+The left panel names the review, counts the cards — changed symbols plus the
+file-level catch-alls — and lists every changed file with its card count and
+`+N −M`. Clicking a file zooms the canvas to that file's container, which is
+how you get back to a particular file without hunting for it: elk packs a real
+branch into tens of thousands of pixels each way, so the initial fit shows the
+shape of the graph rather than its text.
 
-Each card carries its file path, a change badge, and its slice of the diff.
-The graph pans and zooms, with a minimap and controls in the corners; a dashed
-edge is one the call resolver was not sure about. Warnings from the analysis
-sit in a banner at the top.
+The graph itself is grouped by file. Each file is a **container** box headed
+with its path, how many cards it holds, and its `+N −M`; the cards inside it
+are the symbols that changed. A card is collapsed by default — name, kind, a
+change badge, and its own `+N −M` on one line — so that a screenful of graph
+stays readable.
+
+**Click a card to expand it.** Its diff opens in a panel over the cards below,
+without moving anything: the card's own box keeps its collapsed size, so the
+canvas never jumps. Selecting a card also dims everything outside its
+neighbourhood — the card, whatever calls it, and whatever it calls — leaving
+just the conversation that card takes part in. Press Escape, click the same
+card again, or click the empty canvas to collapse and undim. Hovering a card
+previews the same dimming while nothing is selected.
+
+Edges run caller → callee with an arrowhead at the callee's end; a dashed one
+is a call the resolver was not sure about. The graph pans and zooms, with a
+minimap and controls in the corners. Warnings from the analysis sit in a
+banner at the top.
 
 ## Install from a release
 

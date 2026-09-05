@@ -163,11 +163,11 @@ Decisions taken (with reasons, per the ticket):
 **Files:**
 - Modify: `README.md`, `CLAUDE.md`
 
-- [ ] rewrite README's "In the browser" section: file containers with path / card count / `+N −M`, collapsed cards, click to expand a card's diff over its neighbours, Escape or a click on the canvas to collapse, arrowheads pointing caller→callee with dashed ambiguous edges, selection dimming everything outside a card's neighbourhood, and the left panel's file list zooming to a container
-- [ ] update the `web/src/` layout tree in CLAUDE.md with `lib/focus.ts` and `components/FileNode.tsx`
-- [ ] add a short paragraph to CLAUDE.md's frontend section recording the two decisions a future change would otherwise re-litigate: layout sizes cards by their *collapsed* height and expansion must never re-run it, and edge paths are React Flow `smoothstep` rather than elk's `sections`
-- [ ] confirm the two-sided-`GraphSnapshot` section still reads true — no contract change was made
-- [ ] run `cd web && npm test && npm run typecheck` and the three Rust gates one final time
+- [x] rewrite README's "In the browser" section: file containers with path / card count / `+N −M`, collapsed cards, click to expand a card's diff over its neighbours, Escape or a click on the canvas to collapse, arrowheads pointing caller→callee with dashed ambiguous edges, selection dimming everything outside a card's neighbourhood, and the left panel's file list zooming to a container
+- [x] update the `web/src/` layout tree in CLAUDE.md with `lib/focus.ts` and `components/FileNode.tsx`
+- [x] add a short paragraph to CLAUDE.md's frontend section recording the two decisions a future change would otherwise re-litigate: layout sizes cards by their *collapsed* height and expansion must never re-run it, and edge paths are React Flow `smoothstep` rather than elk's `sections`
+- [x] confirm the two-sided-`GraphSnapshot` section still reads true — no contract change was made
+- [x] run `cd web && npm test && npm run typecheck` and the three Rust gates one final time
 
 ## Post-Completion Manual Verification
 

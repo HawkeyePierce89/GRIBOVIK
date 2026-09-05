@@ -44,8 +44,8 @@ web/
     App.tsx                # fetches the graph, lays out once, renders the canvas
     styles.css
     types/snapshot.ts      # the other half of the wire contract
-    lib/{transform,layout,elk,snapshot}.ts + *.test.ts
-    components/{SymbolNode,DiffView,ProgressPanel}.tsx
+    lib/{transform,layout,elk,snapshot,focus}.ts + *.test.ts
+    components/{SymbolNode,FileNode,DiffView,ProgressPanel}.tsx
 ```
 
 Unit tests live in `#[cfg(test)] mod tests` next to the code they cover;
@@ -253,6 +253,21 @@ OS-assigned port the proxy cannot find:
 ```sh
 cargo run -- --port 7777 --assets web/dist   # then npm run dev in web/
 ```
+
+Two decisions in the canvas are load-bearing enough that changing them by
+accident breaks something a test will not catch. **The layout sizes every card
+by its collapsed height** (`CARD_HEIGHT` in `layout.ts`, matched to the
+stylesheet), and expanding a card must never re-run it: `SymbolNode` draws the
+diff in an absolutely positioned `.symbol-expanded` overlay, so the node's own
+box keeps the size elk gave it and the canvas cannot shift under the reviewer
+mid-click. Anything that makes a card's box grow with its content brings back
+the re-layout — and with it a graph that jumps every time you open a diff.
+**Edge paths are React Flow's `smoothstep`**, not the `sections` elk computes.
+elk's bendpoints are derived for its own port model and stop lining up with
+React Flow's left/right handle centres the moment a node is dragged, so
+consuming them would mean a custom edge component that is wrong exactly when it
+matters; `smoothstep` gives the same orthogonal look, costs nothing per edge,
+and stays correct when a node moves.
 
 ## The two workflows
 
