@@ -125,7 +125,7 @@ This is a CI-only change: YAML and Markdown, no Rust or TypeScript.
 **Files:**
 - Modify: `CLAUDE.md`
 
-- [ ] Rewrite the opening paragraph so it describes what the workflow now does:
+- [x] Rewrite the opening paragraph so it describes what the workflow now does:
       `release.yml` builds the binaries on a `v*` tag; `pr-graph.yml` builds
       gribovik from the PR's own checkout and uploads its `--export` output as a
       per-PR artifact, so the graph on a PR is produced by the code under
@@ -135,26 +135,26 @@ This is a CI-only change: YAML and Markdown, no Rust or TypeScript.
       refuses to compile without `web/dist/index.html` and
       `web/dist/export.html`, and note that the four steps are deliberately
       duplicated rather than factored into a composite action.
-- [ ] Keep the "actions pinned to a major tag, never a SHA" bullet as is — it
+- [x] Keep the "actions pinned to a major tag, never a SHA" bullet as is — it
       still holds in both workflows.
-- [ ] Keep the `GH_REPO` bullet, but reword it so it no longer cites
+- [x] Keep the `GH_REPO` bullet, but reword it so it no longer cites
       `pr-graph.yml`'s download as the motivating example (that step is gone).
       Attribute the rule to `release.yml`'s publish step and state the general
       reason: a step that `cd`s outside the checkout has no working directory
       for `gh` to read a repository from and exits with `failed to run git:
       fatal: not a git repository`, so the rule is applied unconditionally and
       needs no judgement call.
-- [ ] Delete the whole paragraph beginning "`pr-graph.yml` is only ever as
+- [x] Delete the whole paragraph beginning "`pr-graph.yml` is only ever as
       current as the latest *published* release" — the constraint no longer
       exists, and with it the sentence about cutting a release before a workflow
       step depending on new behavior can go green.
-- [ ] Re-read the edited section top to bottom and confirm no remaining sentence
+- [x] Re-read the edited section top to bottom and confirm no remaining sentence
       is false after the change: no claim of a release download, no claim that
       the PR graph lags the latest release, and the two surviving conventions
       still describe the files as they now are.
-- [ ] Confirm the rest of `CLAUDE.md` is unaffected: `grep -n 'release\|pr-graph'
+- [x] Confirm the rest of `CLAUDE.md` is unaffected: `grep -n 'release\|pr-graph'
       CLAUDE.md` and check that every remaining hit is still accurate.
-- [ ] Confirm `README.md` needs no edit: `grep -n 'release' README.md` — the
+- [x] Confirm `README.md` needs no edit: `grep -n 'release' README.md` — the
       PR-artifact paragraph must contain no mention of the release binary.
       (Verified during exploration; re-check so the claim is not stale.)
 
