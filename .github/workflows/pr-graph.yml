@@ -22,9 +22,10 @@ jobs:
     steps:
       # Unlike the release download this replaced, every step below runs code
       # from the PR: npm lifecycle scripts, `build.rs`, proc macros, and the
-      # binary itself. Nothing after the checkout talks to a remote — the
-      # analysis only ever runs local `rev-parse`/`merge-base`/`diff`/`show` —
-      # so the job's token has no reason to sit in `.git/config` where that
+      # binary itself — plus whatever the npm registry and crates.io serve the
+      # build. Nothing after the checkout talks to the *git* remote, though —
+      # the analysis only ever runs local `rev-parse`/`merge-base`/`diff`/`show`
+      # — so the job's token has no reason to sit in `.git/config` where that
       # code can read it.
       - name: Checkout
         uses: actions/checkout@v7

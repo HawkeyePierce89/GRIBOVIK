@@ -223,7 +223,11 @@ release download executed only a trusted artifact, so it stays on
 secrets, and checks out with `persist-credentials: false`: the analysis shells
 out only to local `rev-parse`, `merge-base`, `diff` and `show`, so nothing
 after the checkout needs the token that `actions/checkout` would otherwise
-leave in `.git/config`. Two conventions hold in both:
+leave in `.git/config`. Those measures bound what a hostile PR reaches on the
+*runner*; they say nothing about the artifact, which is now written by the PR's
+own exporter and frontend and is therefore untrusted content in the reviewer's
+browser — README says so where it tells a reviewer to open the file. Two
+conventions hold in both:
 
 - Actions are pinned to a major tag (`@v7`, `@v8`), never to a SHA.
 - Any step invoking `gh` sets `GH_REPO: ${{ github.repository }}` in its own

@@ -124,7 +124,11 @@ all data and scripts inlined. This file opens instantly in a browser by
 double-clicking it, with no server required. If your project uses the provided
 GitHub Actions PR workflow, it will attach this file as an artifact: download
 it from the PR's Checks tab, extract it, and open it locally, as GitHub does
-not render artifact HTML directly in the browser.
+not render artifact HTML directly in the browser. That workflow builds GRIBOVIK
+from the PR's own checkout, so the file it produces is as trustworthy as the
+branch it came from: a PR that edits the exporter or the frontend can put
+anything it likes in the page you are about to open. Read such a diff before
+opening the artifact.
 
 The server binds loopback only, and answers only requests addressed to a
 loopback name — `localhost`, `127.0.0.1` or `[::1]`, with or without a port.
