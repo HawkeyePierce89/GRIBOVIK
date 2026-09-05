@@ -161,16 +161,26 @@ function Canvas({ loaded }: { loaded: Loaded }) {
     };
   }, []);
 
-  const onNodeClick = useCallback((_event: React.MouseEvent, node: Node) => {
-    // A container is the map, not a card: clicking one is how a reviewer puts
-    // the diff away without aiming at empty canvas.
-    if (node.type !== "symbol") {
-      setSelectedId(null);
-      setHoverId(null);
-      return;
-    }
-    setSelectedId((current) => (current === node.id ? null : node.id));
-  }, []);
+  const onNodeClick = useCallback(
+    (_event: React.MouseEvent, node: Node) => {
+      // A container is the map, not a card: clicking one is how a reviewer
+      // puts the diff away without aiming at empty canvas.
+      if (node.type !== "symbol") {
+        clear();
+        return;
+      }
+      // Clicking the open card again is a dismissal like the other three, so
+      // it goes through `clear`: the pointer is still resting on that card, so
+      // dropping only the selection would collapse the diff and leave the
+      // whole graph dimmed around it.
+      if (node.id === selectedId) {
+        clear();
+        return;
+      }
+      setSelectedId(node.id);
+    },
+    [clear, selectedId],
+  );
 
   const onNodeMouseEnter = useCallback((_event: React.MouseEvent, node: Node) => {
     setHoverId(node.id);
@@ -182,6 +192,11 @@ function Canvas({ loaded }: { loaded: Loaded }) {
 
   const onSelectFile = useCallback(
     (containerId: string) => {
+      // Asking for a file is navigation, not a refinement of the current
+      // reading position: without this the reviewer arrives at the container
+      // they picked with every card in it dimmed by a selection made
+      // somewhere else, and the open diff still off-screen.
+      clear();
       void fitView({
         nodes: [{ id: containerId }],
         duration: 400,
@@ -191,7 +206,7 @@ function Canvas({ loaded }: { loaded: Loaded }) {
         maxZoom: 1,
       });
     },
-    [fitView],
+    [clear, fitView],
   );
 
   const warnings = loaded.warnings;

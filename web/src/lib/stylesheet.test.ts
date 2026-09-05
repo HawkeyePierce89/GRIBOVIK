@@ -21,7 +21,11 @@ const css = readFileSync(new URL("../styles.css", import.meta.url), "utf8");
 /** The value of `property` inside the first `selector { … }` block. */
 function declaration(selector: string, property: string): string {
   const block = new RegExp(
-    `${selector.replace(".", "\\.")}\\s*\\{([^}]*)\\}`,
+    // `replaceAll`: a string pattern to `replace` takes the first match only,
+    // so a compound selector would keep unescaped dots that match any
+    // character — and the `[^}]*` below would then assert against whatever
+    // block that happened to hit.
+    `${selector.replaceAll(".", "\\.")}\\s*\\{([^}]*)\\}`,
   ).exec(css);
   expect(block, `no ${selector} block in styles.css`).not.toBeNull();
   const value = new RegExp(`(?:^|;)\\s*${property}\\s*:\\s*([^;]+);`, "m").exec(

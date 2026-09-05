@@ -43,6 +43,8 @@ export function SymbolNode({ data }: NodeProps<SymbolFlowNode>) {
         // `nowheel`/`nodrag` opt out of the wheel and the drag but not the
         // click. Without the stop, selecting a line of the diff — or reaching
         // for its scrollbar — bubbles up and collapses the card being read.
+        // Selecting text is only possible because the stylesheet gives this
+        // box `user-select: text` back; both halves are needed for a copy.
         <div
           className="symbol-expanded nowheel nodrag"
           onClick={(event) => {

@@ -279,6 +279,11 @@ body {
   border: 1px solid var(--focus);
   border-radius: 8px;
   cursor: auto;
+  /* React Flow sets `user-select: none` on every node so a drag never paints
+     a text selection across the canvas. The diff is the one thing here a
+     reviewer copies out, and `nodrag` already keeps the drag off this box, so
+     the overlay takes the selection back. */
+  user-select: text;
 }
 
 .badge {

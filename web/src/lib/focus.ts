@@ -96,8 +96,12 @@ export function applyFocus(
       // Containers are exempt from both: they never dim, and a file is not a
       // card with a diff to expand.
       if (node.type !== "symbol") return node;
-      const dimmed = near !== null && !near.nodes.has(node.id);
+      // `!expanded` first: the two ids arrive independently, so a caller
+      // previewing one card's neighbourhood while another is open would
+      // otherwise draw the open diff at the dimmed opacity — fading the one
+      // card the reviewer asked to read.
       const expanded = node.id === expandedId;
+      const dimmed = !expanded && near !== null && !near.nodes.has(node.id);
       if (!dimmed && !expanded) return node;
       return {
         ...node,

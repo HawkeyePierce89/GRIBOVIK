@@ -136,6 +136,20 @@ describe("applyFocus", () => {
     );
   });
 
+  it("never dims the expanded card, whatever the focus is", () => {
+    const { nodes, edges } = flow();
+
+    // `b.rs::w` is two hops from `a.rs::x`, so the focus would otherwise dim
+    // it — and fade the diff the reviewer opened it to read.
+    const focused = applyFocus(nodes, edges, "a.rs::x", "b.rs::w");
+
+    const open = focused.nodes.find(
+      (node) => node.type === "symbol" && node.id === "b.rs::w",
+    )!;
+    expect(open.data).toMatchObject({ expanded: true });
+    expect(open.className).toBeUndefined();
+  });
+
   it("expands a card without dimming anything when only hover is unset", () => {
     const { nodes, edges } = flow();
 
