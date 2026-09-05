@@ -151,12 +151,12 @@ Decisions taken (with reasons, per the ticket):
 **Files:**
 - Modify: `docs/plans/20260905-readable-graph-file-containers-compact-cards.md` (Verification notes section)
 
-- [ ] `cd web && npm test && npm run typecheck` green
-- [ ] `cd web && npm run build` — both `dist/index.html` and `dist/export.html` produced
-- [ ] `cargo test`, `cargo clippy --all-targets -- -D warnings`, `cargo fmt --check` green (nothing under `src/` changed; this confirms it)
-- [ ] `git diff --stat` shows no change under `src/` and none to `web/src/types/snapshot.ts`
-- [ ] measure elk on the real MVP snapshot: export `gribovik --export /tmp/mvp.html 0dcb3f1~1 0dcb3f1`, then time `layout()` on its snapshot (a throwaway node script against the built `lib/layout.ts` inputs, flat vs hierarchical) and write both numbers into the Verification notes section of this plan file
-- [ ] if hierarchical exceeds a few seconds, add `"elk.layered.thoroughness": "1"` to `LAYOUT_OPTIONS` with a comment carrying the measured before/after, and re-run the layout tests
+- [x] `cd web && npm test && npm run typecheck` green
+- [x] `cd web && npm run build` — both `dist/index.html` and `dist/export.html` produced
+- [x] `cargo test`, `cargo clippy --all-targets -- -D warnings`, `cargo fmt --check` green (nothing under `src/` changed; this confirms it)
+- [x] `git diff --stat` shows no change under `src/` and none to `web/src/types/snapshot.ts`
+- [x] measure elk on the real MVP snapshot: export `gribovik --export /tmp/mvp.html 0dcb3f1~1 0dcb3f1`, then time `layout()` on its snapshot (a throwaway node script against the built `lib/layout.ts` inputs, flat vs hierarchical) and write both numbers into the Verification notes section of this plan file
+- [x] if hierarchical exceeds a few seconds, add `"elk.layered.thoroughness": "1"` to `LAYOUT_OPTIONS` with a comment carrying the measured before/after, and re-run the layout tests — **not applied: the condition did not hold.** Hierarchical measured 0.56 s, so `LAYOUT_OPTIONS` is unchanged (see Verification notes)
 
 ### Task 7: Update documentation
 
@@ -179,4 +179,49 @@ Not automatable; run these by hand in a real browser after Task 7.
 
 ## Verification notes
 
-(filled in during Task 6 — elk flat vs hierarchical timings on the MVP snapshot)
+### Gates (Task 6)
+
+All green on branch `readable-graph-file-containers-compact-cards`:
+
+- `cd web && npm test` — 54 tests across 7 files (`snapshot`, `transform`,
+  `focus`, `layout` in node; `FileNode`, `SymbolNode`, `ProgressPanel` in jsdom).
+- `cd web && npm run typecheck` — `tsc --noEmit`, clean.
+- `cd web && npm run build` — produced `dist/index.html` (0.39 kB shell +
+  1839 kB JS chunk) and `dist/export.html` (1859 kB, everything inlined by
+  `vite:singlefile`). Both anchors `build.rs` requires exist.
+- `cargo test`, `cargo clippy --all-targets -- -D warnings`, `cargo fmt --check`
+  — all clean, which is the check that the frontend-only constraint held.
+- `git diff --stat master...HEAD` — 17 files, none under `src/` and none
+  touching `web/src/types/snapshot.ts`. The two-sided `GraphSnapshot` contract
+  was not changed, so nothing needed mirroring.
+
+### elk timings on the real MVP snapshot
+
+Measured against `0dcb3f1~1..0dcb3f1` (the MVP commit), exported with
+`--export` and the snapshot lifted out of the inline script tag:
+**572 cards, 934 edges, 60 files**. A throwaway `vite-node` script built the
+elk graph three ways from the same `toFlow` output and timed `elk.layout()`
+inline (no worker), so these numbers are the algorithm's cost, not the page's.
+Three runs, node 26, Darwin arm64:
+
+| variant | time | canvas |
+| --- | --- | --- |
+| flat (one level, no containers) | 0.41 / 0.42 / 0.43 s | 25404x21088 |
+| hierarchical `INCLUDE_CHILDREN` (**shipped**) | 0.56 / 0.56 / 0.59 s | 30981x20470 |
+| hierarchical + `elk.layered.thoroughness: "1"` | 0.43 / 0.43 / 0.45 s | 32051x15085 |
+
+Hierarchy costs about **0.15 s** over flat on this graph — a 35% relative
+increase on a number small enough that it does not matter, and an order of
+magnitude under the "first paint within a few seconds" budget. It also runs in
+the worker, so the tab stays live for the whole of it.
+
+The plan's prototype estimate (2.30 s hierarchical on a synthetic 572-card /
+1100-edge / 90-file graph) was pessimistic by a factor of four against the real
+thing. The synthetic graph had denser cross-file edges and half again as many
+containers, which is what `INCLUDE_CHILDREN` actually pays for.
+
+**`elk.layered.thoroughness: "1"` was therefore not applied.** It is real —
+it does buy back most of the hierarchy cost — but the plan gates it on
+hierarchical exceeding a few seconds, and 0.56 s does not. `LAYOUT_OPTIONS` in
+`web/src/lib/layout.ts` ships unchanged. If a much larger range ever makes the
+wait visible, the lever and its measured effect are recorded here.
