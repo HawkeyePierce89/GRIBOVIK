@@ -34,6 +34,14 @@ rather than only on the symbol's. Blank lines added or removed between symbols
 are the one exception: they carry nothing to review and would otherwise put a
 file card on almost every file that gained a function.
 
+Where a run of added or deleted lines could equally be reported one symbol
+earlier or later — an added function whose first line repeats the line above it
+— GRIBOVIK places it the way `git diff` does, using git's own indent heuristic.
+An added function keeps its own attribute or doc comment instead of handing it
+to the function below, and the function below stays off the graph. On
+repetitive text the underlying line matching can still differ from git's, so
+the two are not guaranteed identical line for line.
+
 GRIBOVIK compares two **commits**. Working-tree changes — unstaged, or staged
 but not committed — are not part of any revision range and will not appear;
 commit or stash before reviewing.

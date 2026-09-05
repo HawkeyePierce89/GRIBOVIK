@@ -186,6 +186,10 @@ mod tests {
         include_str!("../../../tests/fixtures/swift/nested_closure/before.swift");
     const NESTED_AFTER: &str =
         include_str!("../../../tests/fixtures/swift/nested_closure/after.swift");
+    const SLIDER_BEFORE: &str =
+        include_str!("../../../tests/fixtures/swift/slider_attribute/before.swift");
+    const SLIDER_AFTER: &str =
+        include_str!("../../../tests/fixtures/swift/slider_attribute/after.swift");
 
     /// Every symbol rendered as `name | qualified_name | kind | start-end`, so
     /// expectations read as a table and mismatches diff line by line.
@@ -293,6 +297,28 @@ mod tests {
         for src in [NESTED_BEFORE, NESTED_AFTER] {
             assert_eq!(outline(src), vec![row("total", "total", "function", 1, 7)]);
         }
+    }
+
+    #[test]
+    fn an_attribute_line_belongs_to_the_declaration_it_decorates() {
+        // The slider fixture only exercises the diff post-pass if `@MainActor`
+        // is inside the symbol's span: it is the line every declaration shares
+        // with its neighbour, and the one the insertion may slide across.
+        assert_eq!(
+            outline(SLIDER_BEFORE),
+            vec![
+                row("first", "first", "function", 1, 4),
+                row("third", "third", "function", 6, 9),
+            ]
+        );
+        assert_eq!(
+            outline(SLIDER_AFTER),
+            vec![
+                row("first", "first", "function", 1, 4),
+                row("second", "second", "function", 6, 9),
+                row("third", "third", "function", 11, 14),
+            ]
+        );
     }
 
     #[test]

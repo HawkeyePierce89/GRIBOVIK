@@ -448,6 +448,21 @@ mod tests {
         include_str!("../../tests/fixtures/ts/modified_method/before.ts");
     const TS_MODIFIED_AFTER: &str =
         include_str!("../../tests/fixtures/ts/modified_method/after.ts");
+    const RUST_SLIDER_BEFORE: &str =
+        include_str!("../../tests/fixtures/rust/slider_attribute/before.rs");
+    const RUST_SLIDER_AFTER: &str =
+        include_str!("../../tests/fixtures/rust/slider_attribute/after.rs");
+    const SWIFT_SLIDER_BEFORE: &str =
+        include_str!("../../tests/fixtures/swift/slider_attribute/before.swift");
+    const SWIFT_SLIDER_AFTER: &str =
+        include_str!("../../tests/fixtures/swift/slider_attribute/after.swift");
+    const TS_SLIDER_BEFORE: &str =
+        include_str!("../../tests/fixtures/ts/slider_attribute/before.ts");
+    const TS_SLIDER_AFTER: &str = include_str!("../../tests/fixtures/ts/slider_attribute/after.ts");
+    const RUST_EXPORT_HTML_BEFORE: &str =
+        include_str!("../../tests/fixtures/rust/slider_export_html/before.rs");
+    const RUST_EXPORT_HTML_AFTER: &str =
+        include_str!("../../tests/fixtures/rust/slider_export_html/after.rs");
     const TSX_BEFORE: &str = include_str!("../../tests/fixtures/ts/component/before.tsx");
     const TSX_AFTER: &str = include_str!("../../tests/fixtures/ts/component/after.tsx");
 
@@ -511,6 +526,140 @@ mod tests {
                 "added",
                 "+5 +6 +7 +8 +9"
             )]
+        );
+    }
+
+    /// A function inserted between two others that begin on an identical line
+    /// (`#[test]`) has several valid diff placements. `similar` returns the
+    /// fully-slid-down one, which hands the trailing `#[test]` to the *next*
+    /// function and turns an untouched `third` into a modified card. The
+    /// indent-heuristic post-pass in `diff.rs` slides the block back up, so the
+    /// only card is the function that was actually added.
+    #[test]
+    fn an_inserted_rust_test_fn_does_not_spill_into_the_next_one() {
+        let file = FileInput::modified("src/a.rs", RUST_SLIDER_BEFORE, RUST_SLIDER_AFTER);
+        assert_eq!(
+            outline(&[file]),
+            // Lines 6-9 are `second` in full, attribute included; the blank
+            // line 10 is the one leftover, and a blank leftover is filtered,
+            // so no file card either.
+            vec![row("src/a.rs::second", "function", "added", "+6 +7 +8 +9")]
+        );
+    }
+
+    /// The reversed pair *is* the symmetric case: deleting `second` from
+    /// `after.rs` is the same slider with the sides swapped.
+    #[test]
+    fn a_deleted_rust_test_fn_does_not_spill_into_the_next_one() {
+        let file = FileInput::modified("src/a.rs", RUST_SLIDER_AFTER, RUST_SLIDER_BEFORE);
+        assert_eq!(
+            outline(&[file]),
+            vec![row(
+                "src/a.rs::second",
+                "function",
+                "deleted",
+                "-6 -7 -8 -9"
+            )]
+        );
+    }
+
+    /// Swift's analogue: `@MainActor` parses inside the declaration, so it is
+    /// part of the symbol's span and is the shared line the insertion slides
+    /// across.
+    #[test]
+    fn an_inserted_swift_func_does_not_spill_into_the_next_one() {
+        let file = FileInput::modified("src/a.swift", SWIFT_SLIDER_BEFORE, SWIFT_SLIDER_AFTER);
+        assert_eq!(
+            outline(&[file]),
+            vec![row(
+                "src/a.swift::second",
+                "function",
+                "added",
+                "+6 +7 +8 +9"
+            )]
+        );
+    }
+
+    /// TypeScript is the third language whose spans nest, and the shared line
+    /// the block slides across is a `/** Runs it. */` doc comment rather than
+    /// an attribute. Slid all the way down it would end on `third`'s comment,
+    /// carding the untouched `third`; the heuristic puts it on `second`, whose
+    /// card is lines 7-10 — comment through closing brace.
+    ///
+    /// The enclosing `Service` still takes the blank separator at line 11: the
+    /// empty-leftover exception is the *file* card's, and a class card holding
+    /// only class-level scaffolding is what
+    /// `a_typescript_class_does_not_repeat_its_methods_changes` already pins.
+    /// Cross-checked against `git diff --no-index --indent-heuristic`.
+    #[test]
+    fn an_inserted_ts_method_does_not_spill_into_the_next_one() {
+        let file = FileInput::modified("src/a.ts", TS_SLIDER_BEFORE, TS_SLIDER_AFTER);
+        assert_eq!(
+            outline(&[file]),
+            vec![
+                row(
+                    "src/a.ts::Service",
+                    "class",
+                    "modified",
+                    "=1/1 =6/6 +11 =11/16"
+                ),
+                row(
+                    "src/a.ts::Service.second",
+                    "method",
+                    "added",
+                    "+7 +8 +9 +10"
+                ),
+            ]
+        );
+    }
+
+    /// The pair from the ticket: `tests/export_html.rs` at `126e29d~1` and
+    /// `126e29d`, where the added test function begins on the same `#[test]`
+    /// line as the one below it. With the block slid all the way down, the
+    /// stray `#[test]` falls inside the *untouched*
+    /// `export_creates_missing_parent_directories` and invents a modified card
+    /// for it, while the function that was actually added shows its own
+    /// attribute as context.
+    #[test]
+    fn the_export_html_pair_cards_only_the_function_that_was_added() {
+        let file = FileInput::modified(
+            "tests/export_html.rs",
+            RUST_EXPORT_HTML_BEFORE,
+            RUST_EXPORT_HTML_AFTER,
+        );
+        let (nodes, _) = build_nodes(slice::from_ref(&file));
+
+        // The added function is the only thing that changed, so it is the only
+        // card — no card for the untouched
+        // `export_creates_missing_parent_directories` below it, and no
+        // file-level card for a leftover line.
+        assert_eq!(
+            nodes
+                .iter()
+                .map(|node| node.id.as_str())
+                .collect::<Vec<_>>(),
+            vec!["tests/export_html.rs::export_with_no_changes_exits_zero_through_the_binary"]
+        );
+
+        let added = &nodes[0];
+        assert_eq!(added.change, ChangeKind::Added);
+
+        // Lines 146-178 of `after.rs`: the `#[test]` attribute through the
+        // closing brace, every one of them an addition. The attribute being
+        // context instead is the other half of the defect — the added function
+        // borrowing the line above it rather than owning its own.
+        assert_eq!(
+            added.diff.first().map(|line| (line.tag, line.new_line)),
+            Some((DiffTag::Add, Some(146)))
+        );
+        assert_eq!(
+            added.diff.last().map(|line| (line.tag, line.new_line)),
+            Some((DiffTag::Add, Some(178)))
+        );
+        assert!(
+            added.diff.iter().all(|line| line.tag == DiffTag::Add),
+            "every line of the added card is an addition; got {:?}",
+            render(added)
         );
     }
 
