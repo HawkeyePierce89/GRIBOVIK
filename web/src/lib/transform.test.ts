@@ -67,6 +67,18 @@ describe("containerId", () => {
     expect(containerId(card.file)).toBe("file:src/a.rs");
     expect(containerId(card.file)).not.toBe(card.id);
   });
+
+  it("escapes colons, so no path can produce an id carrying a `::`", () => {
+    // A path may legally contain a colon. Unescaped, the container for
+    // `src/a.ts::b.tsx` is exactly the card id of `B.tsx` in a file named
+    // `file:src/a.ts` — both are strings git will hand us.
+    expect(containerId("src/a.ts::b.tsx")).toBe("file:src/a.ts%3A%3Ab.tsx");
+    expect(containerId("file:src/a.ts")).not.toBe("file:src/a.ts::B.tsx");
+  });
+
+  it("escapes the escape character, so distinct paths keep distinct ids", () => {
+    expect(containerId("a%3Ab.rs")).not.toBe(containerId("a:b.rs"));
+  });
 });
 
 describe("toFlow", () => {

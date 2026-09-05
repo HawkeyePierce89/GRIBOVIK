@@ -87,12 +87,17 @@ export function edgeId(from: string, to: string): string {
 /**
  * Node id of the container holding `file`'s cards.
  *
- * The two id spaces cannot collide: a card id is `"<file>::<qualified_name>"`
- * and therefore always carries a `::`, where a container id is a bare file
- * path behind a `file:` prefix.
+ * A card id is `"<file>::<qualified_name>"` and therefore always carries a
+ * `::`, so keeping container ids free of `::` keeps the two id spaces apart.
+ * A `file:` prefix on a bare path does not do that on its own: a path may
+ * contain a colon, and a container for `a.ts::b.tsx` would then collide with
+ * a card for a file literally named `file:a.ts`. Percent-escaping every colon
+ * — and the `%` that makes the escape injective — leaves the prefix's own
+ * colon as the only one in the result. Paths carrying neither character, which
+ * is every path anyone commits, come out unchanged.
  */
 export function containerId(file: string): string {
-  return `file:${file}`;
+  return `file:${file.replaceAll("%", "%25").replaceAll(":", "%3A")}`;
 }
 
 /** How many lines a diff adds and removes; context lines count for neither. */

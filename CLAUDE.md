@@ -264,8 +264,11 @@ does — has to be wrapped in `<ReactFlowProvider>` in the test, since the handl
 reads the instance store and throws without one.
 
 The canvas adds a second id space on top of the snapshot's: a container is
-`file:<path>`, a card keeps `<file>::<qualified_name>`. They cannot collide
-because a card id always carries a `::`. `toFlow` emits each container
+`file:<path>` with every `:` in the path percent-escaped, a card keeps
+`<file>::<qualified_name>`. A card id always carries a `::` and an escaped
+container id never can, which is what keeps the two apart — the prefix alone
+would not, since a path may itself contain a colon and `file:` + `a.ts::b.tsx`
+is exactly the card id of `b.tsx` in a file named `file:a.ts`. `toFlow` emits each container
 immediately before its own cards — React Flow resolves `parentId` against the
 nodes it has already seen, so a child ahead of its parent in the array is an
 error rather than a misplacement.

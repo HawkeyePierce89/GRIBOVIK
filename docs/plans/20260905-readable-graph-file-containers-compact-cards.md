@@ -59,8 +59,10 @@ Decisions taken (with reasons, per the ticket):
   is a preview that only dims, and only while nothing is selected.
 - **Containers never dim.** They are the map; dimming them would defeat the
   overview the ticket is asking for.
-- **Container id is `file:<path>`.** Card ids are always `<file>::<name>` and
-  therefore always contain `::`, so the two id spaces cannot collide.
+- **Container id is `file:<path>` with the path's colons escaped.** Card ids
+  are always `<file>::<name>` and therefore always contain `::`; escaping
+  leaves the prefix's own colon as the only one in a container id, so no path
+  — including one that itself contains `::` — can make the two spaces collide.
 - **Measured elk cost (local prototype, synthetic 572 cards / 1100 edges,
   90 files):** flat `0.21 s`, hierarchical `INCLUDE_CHILDREN` `2.30 s`. Within
   the "first paint within a few seconds" budget and it runs in the worker, so
@@ -88,7 +90,7 @@ Decisions taken (with reasons, per the ticket):
 
 - [x] add `lineCounts(diff: DiffLine[]): { added: number; removed: number }` — counts `add` / `del` tags; export it, both the card and the container header use it
 - [x] add `FileNodeData = { file: string; cardCount: number; added: number; removed: number }`, `FileFlowNode = Node<FileNodeData, "file">`, and `GraphFlowNode = SymbolFlowNode | FileFlowNode`
-- [x] add `containerId(file: string): string` returning `` `file:${file}` `` with a comment on why it cannot collide with a card id
+- [x] add `containerId(file: string): string` returning `` `file:${file}` `` with the path's `%` and `:` percent-escaped, and a comment on why that is what makes it unable to collide with a card id
 - [x] extend `SymbolNodeData` with the card's own `added`/`removed` counts so the collapsed card does not recount on every render
 - [x] `toFlow` now emits, per file in first-appearance order, the container node followed by its cards — React Flow requires a parent to precede its children in the array; cards carry `parentId: containerId(file)` and `extent: "parent"`, containers carry `zIndex: 0` and cards `zIndex: 1`
 - [x] `toFlow` returns a third field `files: FileSummary[]` (`{ file, containerId, cardCount, added, removed }`) for the navigation panel
