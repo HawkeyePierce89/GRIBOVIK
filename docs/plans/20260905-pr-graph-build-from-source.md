@@ -106,19 +106,19 @@ This is a CI-only change: YAML and Markdown, no Rust or TypeScript.
 - No file changes; this task validates Task 1's step order against the real
   build.
 
-- [ ] Run the web build the workflow runs: `cd web && npm ci && npm run build`,
+- [x] Run the web build the workflow runs: `cd web && npm ci && npm run build`,
       and confirm both `web/dist/index.html` and `web/dist/export.html` exist
       afterwards (the two files `build.rs` demands).
-- [ ] Run `cargo build --release --locked` and confirm `target/release/gribovik`
+- [x] Run `cargo build --release --locked` and confirm `target/release/gribovik`
       is produced — this is the same command and the same `--locked` flag the
       workflow will use, so a stale `Cargo.lock` fails here rather than in CI.
-- [ ] Exercise the export command form against a real range:
+- [x] Exercise the export command form against a real range:
       `./target/release/gribovik --export /tmp/gribovik-pr-graph-check.html
       HEAD~1 HEAD`, and confirm it exits 0. This checks the invocation form the
       `Generate graph` step now uses from the repo root; note that on a range
       with no reviewable changes the tool reports that and writes no file, which
       is exactly the path `if-no-files-found: ignore` covers.
-- [ ] Remove `/tmp/gribovik-pr-graph-check.html` if it was created.
+- [x] Remove `/tmp/gribovik-pr-graph-check.html` if it was created.
 
 ### Task 3: Update `CLAUDE.md` "The two workflows"
 
