@@ -104,32 +104,122 @@ body {
   color: var(--muted);
 }
 
+/* File container ------------------------------------------------------- */
+
+.file-node {
+  /* The layout wrote the box; the component only fills it. */
+  width: 100%;
+  height: 100%;
+  background: rgba(25, 28, 38, 0.55);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  /* Cards are children of this node in the DOM as well as in the layout, and
+     an expanded card's diff overlay reaches past the container's bottom edge.
+     Clipping here would cut it off. */
+  overflow: visible;
+}
+
+.file-header {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  height: 36px; /* HEADER_HEIGHT in layout.ts — elk reserves exactly this. */
+  padding: 0 0.75rem;
+  background: var(--panel);
+  border-bottom: 1px solid var(--line);
+  border-radius: 9px 9px 0 0;
+}
+
+.file-path {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.85rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.file-count {
+  flex: none;
+  color: var(--muted);
+  font-size: 0.78rem;
+}
+
+.file-counts,
+.symbol-counts {
+  flex: none;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.78rem;
+  white-space: nowrap;
+}
+
+.count-added {
+  color: var(--added);
+}
+
+.count-removed {
+  color: var(--deleted);
+}
+
 /* Symbol card ---------------------------------------------------------- */
 
 .symbol-node {
+  /* The overlay an expanded card draws is positioned against this box. */
+  position: relative;
   display: flex;
   flex-direction: column;
-  gap: 0.5rem;
   width: 420px;
+  /* CARD_HEIGHT in layout.ts. Fixed, and fixed here rather than left to the
+     content, because the layout was computed from the constant: a card that
+     grew by a line would overlap the one elk placed below it. */
+  height: 52px;
   padding: 0.75rem;
   background: var(--card);
   border: 1px solid var(--line);
   border-radius: 8px;
+  cursor: pointer;
 }
 
-.symbol-header {
+.symbol-row {
   display: flex;
   align-items: center;
-  justify-content: space-between;
   gap: 0.5rem;
+  min-width: 0;
 }
 
-.symbol-file {
+.symbol-name {
+  flex: 1;
+  min-width: 0;
   overflow: hidden;
-  color: var(--muted);
-  font-size: 0.8rem;
+  font-size: 0.9rem;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  /* A qualified name can be longer than the card; the card's width is what
+     the layout was computed from, so the name gives way, not the box. */
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.symbol-kind {
+  flex: none;
+  color: var(--muted);
+  font-size: 0.72rem;
+}
+
+.symbol-expanded {
+  /* Anchored under the collapsed row and drawn over whatever the layout put
+     below, so expanding a card re-flows nothing. `focus.ts` lifts the node's
+     z-index to match. */
+  position: absolute;
+  top: 100%;
+  left: 0;
+  width: 100%;
+  margin-top: 0.35rem;
+  padding: 0.5rem;
+  background: var(--card);
+  border: 1px solid var(--focus);
+  border-radius: 8px;
+  cursor: auto;
 }
 
 .badge {
@@ -157,22 +247,6 @@ body {
 
 .badge-file {
   background: var(--file);
-}
-
-.symbol-name {
-  display: flex;
-  align-items: baseline;
-  gap: 0.5rem;
-  margin: 0;
-  font-size: 1rem;
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-  word-break: break-all;
-}
-
-.symbol-kind {
-  color: var(--muted);
-  font-size: 0.72rem;
-  font-family: inherit;
 }
 
 /* Diff ----------------------------------------------------------------- */
@@ -237,4 +311,19 @@ body {
 
 .react-flow__node {
   cursor: default;
+}
+
+/* Focus and dimming ----------------------------------------------------- */
+
+/* `focus.ts` sets these two classes and nothing else does. Containers never
+   get `dimmed`: they are the map the reviewer navigates by. */
+
+.react-flow__node.dimmed,
+.react-flow__edge.dimmed {
+  opacity: 0.18;
+}
+
+.react-flow__edge.focused .react-flow__edge-path {
+  stroke: var(--focus);
+  stroke-width: 2;
 }

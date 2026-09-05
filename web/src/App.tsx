@@ -14,12 +14,14 @@ import {
   useEdgesState,
   useNodesState,
   type Edge,
+  type Node,
   type NodeTypes,
 } from "@xyflow/react";
 import { useEffect, useState } from "react";
 
 import "@xyflow/react/dist/style.css";
 
+import { FileNode } from "./components/FileNode";
 import { ProgressPanel } from "./components/ProgressPanel";
 import { SymbolNode } from "./components/SymbolNode";
 import { gridLayout, layout } from "./lib/layout";
@@ -27,7 +29,20 @@ import { loadSnapshot } from "./lib/snapshot";
 import { toFlow, type GraphFlowNode } from "./lib/transform";
 import type { GraphSnapshot } from "./types/snapshot";
 
-const nodeTypes = { symbol: SymbolNode } satisfies NodeTypes;
+const nodeTypes = { symbol: SymbolNode, file: FileNode } satisfies NodeTypes;
+
+/**
+ * What the minimap paints a node with.
+ *
+ * Its default reads the node's own background, and a container's is a
+ * translucent panel over the canvas — which the minimap composites to nearly
+ * black, so a graph of containers turns the map into a slab. Painting the
+ * containers as outlines of where the files are, and the cards a shade
+ * brighter, is what keeps the map legible.
+ */
+function minimapColor(node: Node): string {
+  return node.type === "file" ? "#2c3245" : "#4a5573";
+}
 
 /** What the initial fetch produced, once it has landed. */
 type Loaded = {
@@ -135,7 +150,7 @@ function Graph({ loaded }: { loaded: Loaded }) {
           fitView
         >
           <Background />
-          <MiniMap pannable zoomable />
+          <MiniMap pannable zoomable nodeColor={minimapColor} />
           <Controls />
         </ReactFlow>
       </main>

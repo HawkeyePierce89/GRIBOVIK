@@ -1,5 +1,10 @@
 /**
- * One reviewable card: a changed symbol and its slice of the diff.
+ * One reviewable card: a changed symbol, collapsed to a single row.
+ *
+ * The collapsed row is the whole node as far as the layout is concerned — its
+ * height is `layout.ts`'s `CARD_HEIGHT`, a constant. Expanding draws the diff
+ * in an overlay anchored under that row rather than growing the box, so
+ * selecting a card never moves its neighbours and elk never runs twice.
  */
 
 import { Handle, Position, type NodeProps } from "@xyflow/react";
@@ -18,21 +23,26 @@ export function SymbolNode({ data }: NodeProps<SymbolFlowNode>) {
     <div className="symbol-node">
       <Handle type="target" position={Position.Left} isConnectable={false} />
 
-      <header className="symbol-header">
-        <span className="symbol-file" title={node.file}>
-          {node.file}
+      <div className="symbol-row">
+        {/* The path is the container header's job now; a card only has to say
+            which symbol it is, and `title` keeps the full name reachable when
+            the ellipsis takes it. */}
+        <span className="symbol-name" title={node.name}>
+          {node.name}
+        </span>
+        {node.kind !== "file" && <span className="symbol-kind">{node.kind}</span>}
+        <span className="symbol-counts">
+          <span className="count-added">+{data.added}</span>{" "}
+          <span className="count-removed">−{data.removed}</span>
         </span>
         <span className={`badge badge-${badge}`}>{badge}</span>
-      </header>
-
-      <h2 className="symbol-name">
-        {node.name}
-        {node.kind !== "file" && <span className="symbol-kind">{node.kind}</span>}
-      </h2>
-
-      <div className="nowheel nodrag">
-        <DiffView diff={node.diff} />
       </div>
+
+      {data.expanded === true && (
+        <div className="symbol-expanded nowheel nodrag">
+          <DiffView diff={node.diff} />
+        </div>
+      )}
 
       <Handle type="source" position={Position.Right} isConnectable={false} />
     </div>

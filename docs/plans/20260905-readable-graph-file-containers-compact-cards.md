@@ -122,14 +122,14 @@ Decisions taken (with reasons, per the ticket):
 - Modify: `web/src/components/SymbolNode.tsx`, `web/src/styles.css`, `web/vite.config.ts`, `web/package.json`
 - Create: `web/src/components/FileNode.tsx`, `web/src/components/SymbolNode.test.tsx`
 
-- [ ] add `jsdom`, `@testing-library/react` and `@testing-library/dom` as dev deps; keep `environment: "node"` in `vite.config.ts` and opt the `.test.tsx` files into jsdom with a `@vitest-environment jsdom` docblock
-- [ ] `SymbolNode` renders collapsed by default: name, kind, change badge, `+N −M`, on a fixed `CARD_HEIGHT` row; the file path moves off the card (its container header carries it) and the name gets an ellipsis so a long name cannot grow the box
-- [ ] when `data.expanded`, the card additionally renders the existing `DiffView` in an absolutely positioned panel anchored under the collapsed row (`.symbol-expanded`), keeping the `nowheel nodrag` wrapper and the `.diff` scroll behaviour — the node's own box keeps its collapsed size, so nothing re-flows and the canvas cannot jump
-- [ ] `FileNode`: a container box with a header showing the file path, `N cards` and `+N −M`; sized by the `width`/`height` layout wrote; not connectable, no handles
-- [ ] styles: `.file-node` (header bar, translucent body, no clipping of children), `.symbol-node` collapsed variant, `.symbol-expanded` overlay, `.dimmed` (reduced opacity for nodes and `.react-flow__edge`), `.focused` edge stroke; a minimap `nodeColor` so containers do not black out the map
-- [ ] register `file: FileNode` in `nodeTypes` in `App.tsx`
-- [ ] tests (`SymbolNode.test.tsx`, rendered inside `ReactFlowProvider` so `Handle` has its store): collapsed renders name, kind, badge and `+N −M` and no diff lines; `data.expanded` renders the diff; a `kind === "file"` card shows the `file` badge
-- [ ] run `cd web && npm test && npm run typecheck` — must pass before Task 5
+- [x] add `jsdom`, `@testing-library/react` and `@testing-library/dom` as dev deps; keep `environment: "node"` in `vite.config.ts` and opt the `.test.tsx` files into jsdom with a `@vitest-environment jsdom` docblock
+- [x] `SymbolNode` renders collapsed by default: name, kind, change badge, `+N −M`, on a fixed `CARD_HEIGHT` row; the file path moves off the card (its container header carries it) and the name gets an ellipsis so a long name cannot grow the box
+- [x] when `data.expanded`, the card additionally renders the existing `DiffView` in an absolutely positioned panel anchored under the collapsed row (`.symbol-expanded`), keeping the `nowheel nodrag` wrapper and the `.diff` scroll behaviour — the node's own box keeps its collapsed size, so nothing re-flows and the canvas cannot jump
+- [x] `FileNode`: a container box with a header showing the file path, `N cards` and `+N −M`; sized by the `width`/`height` layout wrote; not connectable, no handles
+- [x] styles: `.file-node` (header bar, translucent body, no clipping of children), `.symbol-node` collapsed variant, `.symbol-expanded` overlay, `.dimmed` (reduced opacity for nodes and `.react-flow__edge`), `.focused` edge stroke; a minimap `nodeColor` so containers do not black out the map
+- [x] register `file: FileNode` in `nodeTypes` in `App.tsx`
+- [x] tests (`SymbolNode.test.tsx`, rendered inside `ReactFlowProvider` so `Handle` has its store): collapsed renders name, kind, badge and `+N −M` and no diff lines; `data.expanded` renders the diff; a `kind === "file"` card shows the `file` badge
+- [x] run `cd web && npm test && npm run typecheck` — must pass before Task 5
 
 ### Task 5: App wiring — click to expand, Escape, focus, and the file panel
 
