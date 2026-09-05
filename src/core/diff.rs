@@ -125,6 +125,28 @@ fn emit(
                 old_lines.len(),
                 new_lines.len()
             );
+            // In release, flush whatever the other side still holds rather
+            // than dropping it: a line reported as changed when it was only
+            // unpaired is a diff a reviewer can still read, where a silently
+            // truncated one loses changes no card would ever show.
+            while i < old_lines.len() {
+                out.push(DiffLine {
+                    tag: DiffTag::Del,
+                    old_line: Some(i as u32 + 1),
+                    new_line: None,
+                    text: strip_eol(old_lines[i]).to_string(),
+                });
+                i += 1;
+            }
+            while j < new_lines.len() {
+                out.push(DiffLine {
+                    tag: DiffTag::Add,
+                    old_line: None,
+                    new_line: Some(j as u32 + 1),
+                    text: strip_eol(new_lines[j]).to_string(),
+                });
+                j += 1;
+            }
             break;
         }
         out.push(DiffLine {
