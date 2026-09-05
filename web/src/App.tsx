@@ -152,14 +152,13 @@ function Canvas({ loaded }: { loaded: Loaded }) {
   useEffect(() => {
     function onKeyDown(event: KeyboardEvent) {
       if (event.key !== "Escape") return;
-      setSelectedId(null);
-      setHoverId(null);
+      clear();
     }
     window.addEventListener("keydown", onKeyDown);
     return () => {
       window.removeEventListener("keydown", onKeyDown);
     };
-  }, []);
+  }, [clear]);
 
   const onNodeClick = useCallback(
     (_event: React.MouseEvent, node: Node) => {
@@ -186,7 +185,11 @@ function Canvas({ loaded }: { loaded: Loaded }) {
     setHoverId(node.id);
   }, []);
 
-  const onNodeMouseLeave = useCallback(() => {
+  // Also the pan/zoom handler: with `onlyRenderVisibleElements` on, moving the
+  // viewport while the pointer rests on a card can unmount that card, and a
+  // removed element delivers no `mouseleave` — so the preview dimming would
+  // stay on the canvas around a card that is no longer in it.
+  const clearHover = useCallback(() => {
     setHoverId(null);
   }, []);
 
@@ -241,7 +244,8 @@ function Canvas({ loaded }: { loaded: Loaded }) {
           onEdgesChange={onEdgesChange}
           onNodeClick={onNodeClick}
           onNodeMouseEnter={onNodeMouseEnter}
-          onNodeMouseLeave={onNodeMouseLeave}
+          onNodeMouseLeave={clearHover}
+          onMoveStart={clearHover}
           onPaneClick={clear}
           // The graph is the diff, not a document to edit: Backspace would
           // otherwise delete the selected card for the rest of the session.
@@ -249,6 +253,15 @@ function Canvas({ loaded }: { loaded: Loaded }) {
           // offer to make any.
           deleteKeyCode={null}
           nodesConnectable={false}
+          // React Flow's node focus is an affordance it cannot honour here:
+          // it makes every node a tab stop announced as "press enter or space
+          // to select", but gates that handler on `isSelectable`, and every
+          // node is emitted `selectable: false` for the z-index reasons
+          // `transform.ts` spells out. Hundreds of tab stops that do nothing,
+          // and a container has nothing to activate in the first place. The
+          // keyboard path a card does have lives on `.symbol-row`, which
+          // `SymbolNode` makes a real `role="button"`.
+          nodesFocusable={false}
           // A real branch is hundreds of cards and twice as many edges, and
           // keeping the ones outside the viewport out of the DOM is what keeps
           // the canvas responsive. It has to stand down while a card is open,

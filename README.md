@@ -67,10 +67,17 @@ altogether and named in the same banner.
 ## In the browser
 
 The left panel counts the cards — changed symbols plus the file-level
-catch-alls — and lists every changed file with its card count and `+N −M`. Clicking a file zooms the canvas to that file's container, which is
-how you get back to a particular file without hunting for it: elk packs a real
-branch into tens of thousands of pixels each way, so the initial fit shows the
-shape of the graph rather than its text.
+catch-alls — and lists every file the graph holds, with its card count and
+`+N −M`. That is every changed file whose language GRIBOVIK reads: a file with
+an unsupported extension is not analysed and so is not in the panel either.
+The counts are totals over that file's cards rather than `git diff --stat`'s,
+which run a few lines higher — a blank line gained between two symbols is the
+one change GRIBOVIK deliberately does not card.
+
+Clicking a file zooms the canvas to that file's container, which is how you get
+back to a particular file without hunting for it: elk packs a real branch into
+tens of thousands of pixels each way, so the initial fit shows the shape of the
+graph rather than its text.
 
 The graph itself is grouped by file. Each file is a **container** box headed
 with its path, how many cards it holds, and its `+N −M`; the cards inside it
@@ -84,7 +91,9 @@ canvas never jumps. Selecting a card also dims everything outside its
 neighbourhood — the card, whatever calls it, and whatever it calls — leaving
 just the conversation that card takes part in. Press Escape, click the same
 card again, or click a container or the empty canvas to collapse and undim.
-Hovering a card previews the same dimming while nothing is selected.
+Hovering a card previews the same dimming while nothing is selected. Cards are
+reachable from the keyboard too: Tab moves between the ones on screen, and
+Enter or Space opens the one you land on.
 
 Edges run caller → callee with an arrowhead at the callee's end; a dashed one
 is a call the resolver was not sure about. The graph pans and zooms, with a

@@ -113,6 +113,46 @@ describe("SymbolNode", () => {
     expect(clicked).toHaveBeenCalledTimes(1);
   });
 
+  it("Enter and Space on the collapsed row reach the canvas as a click", () => {
+    // The only keyboard path to a diff. React Flow's own Enter/Space handler
+    // is gated on `isSelectable`, which every node is emitted without, so
+    // without this the card is mouse-only.
+    for (const key of ["Enter", " "]) {
+      const clicked = vi.fn();
+      draw({ snapshot: card(), added: 1, removed: 0 }, clicked);
+
+      fireEvent.keyDown(screen.getByRole("button"), { key });
+
+      expect(clicked, `${key} did not reach the canvas`).toHaveBeenCalledTimes(
+        1,
+      );
+      cleanup();
+    }
+  });
+
+  it("leaves other keys alone, so Escape still reaches the window", () => {
+    const clicked = vi.fn();
+    draw({ snapshot: card(), added: 1, removed: 0 }, clicked);
+
+    fireEvent.keyDown(screen.getByRole("button"), { key: "Escape" });
+
+    expect(clicked).not.toHaveBeenCalled();
+  });
+
+  it("the collapsed row is a focusable button reporting its expanded state", () => {
+    draw({ snapshot: card(), added: 1, removed: 0 });
+    const row = screen.getByRole("button");
+    expect(row.tabIndex).toBe(0);
+    expect(row.getAttribute("aria-expanded")).toBe("false");
+
+    cleanup();
+
+    draw({ snapshot: card(), added: 1, removed: 0, expanded: true });
+    expect(screen.getByRole("button").getAttribute("aria-expanded")).toBe(
+      "true",
+    );
+  });
+
   it("badges an added and a deleted card by their change kind", () => {
     draw({ snapshot: card({ change: "added" }), added: 4, removed: 0 });
     expect(document.querySelector(".badge-added")?.textContent).toBe("added");

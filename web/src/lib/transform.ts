@@ -147,8 +147,12 @@ export function toFlow(snapshot: GraphSnapshot): {
     let removed = 0;
 
     // Built before the container is pushed, because the container's header
-    // sums what its cards carry — every changed line of a file lands on
-    // exactly one card, so the sum is the file's own count.
+    // sums what its cards carry. That is a total over the file's *cards*, not
+    // over the file's diff: `nodes.rs` drops a leftover line whose text is
+    // empty rather than carding a file for a blank line gained between two
+    // symbols, so a file that grew a function typically reads a handful of
+    // lines under `git diff --stat`. Every line worth reviewing is counted —
+    // which is what the header is for — but the number is not git's.
     const children: SymbolFlowNode[] = cards.map((card) => {
       const counts = lineCounts(card.diff);
       added += counts.added;

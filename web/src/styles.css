@@ -247,6 +247,19 @@ body {
   min-width: 0;
 }
 
+/* The row is the card's control (`role="button"` in SymbolNode), so keyboard
+   focus has to be visible. Drawn on the card's border rather than the row's
+   own box, which is inset by the card's padding and would read as an outline
+   around the text instead of around the card. */
+.symbol-row:focus-visible {
+  outline: none;
+}
+
+.symbol-node:has(.symbol-row:focus-visible) {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+
 .symbol-name {
   flex: 1;
   min-width: 0;

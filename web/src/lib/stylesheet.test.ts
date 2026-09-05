@@ -11,6 +11,7 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 
+import { DIMMED, FOCUSED } from "./focus";
 import { CARD_HEIGHT, HEADER_HEIGHT, NODE_WIDTH } from "./layout";
 
 // Read off disk rather than imported: Vitest stubs every CSS import to an
@@ -43,5 +44,34 @@ describe("layout constants against styles.css", () => {
 
   it("`.file-header` is HEADER_HEIGHT tall, which elk reserves as padding", () => {
     expect(declaration(".file-header", "height")).toBe(`${HEADER_HEIGHT}px`);
+  });
+});
+
+describe("focus classes against styles.css", () => {
+  // `focus.ts` puts these two strings on nodes and edges and the stylesheet is
+  // the only thing that acts on them. Renaming either half alone leaves every
+  // unit test green and the canvas with no dimming and no highlight at all —
+  // a feature silently gone, with nothing to fail.
+  it("styles the class `focus.ts` dims with", () => {
+    expect(css).toContain(`.react-flow__node.${DIMMED}`);
+    expect(css).toContain(`.react-flow__edge.${DIMMED}`);
+  });
+
+  it("styles the class `focus.ts` highlights an edge with", () => {
+    expect(css).toContain(`.react-flow__edge.${FOCUSED}`);
+  });
+});
+
+describe("the expanded overlay's load-bearing declarations", () => {
+  // Both are decisions CLAUDE.md calls load-bearing, and both fail silently:
+  // `position: static` puts the diff back in the flow, so the card grows and
+  // the layout elk computed no longer matches; dropping `user-select` hands
+  // the box back React Flow's `none` and the diff stops being copyable.
+  it("`.symbol-expanded` is positioned out of the flow", () => {
+    expect(declaration(".symbol-expanded", "position")).toBe("absolute");
+  });
+
+  it("`.symbol-expanded` takes text selection back from React Flow", () => {
+    expect(declaration(".symbol-expanded", "user-select")).toBe("text");
   });
 });

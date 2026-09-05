@@ -318,4 +318,26 @@ describe("gridLayout", () => {
       placed[0]!.position.y + CARD_HEIGHT,
     );
   });
+
+  it("leaves the header row clear of the topmost card", () => {
+    // The same property the elk path is held to. The fallback only runs after
+    // the worker has already failed, which is exactly when nobody is looking
+    // — so it is the path least likely to have its header checked by hand.
+    const { nodes } = toFlow(chain());
+
+    for (const card of cards(gridLayout(nodes))) {
+      expect(card.position.y).toBeGreaterThanOrEqual(HEADER_HEIGHT);
+    }
+  });
+
+  it("keeps every card inside the box its container was sized to", () => {
+    const { nodes } = toFlow(chain());
+
+    const placed = gridLayout(nodes);
+    const box = containers(placed)[0]!;
+    for (const card of cards(placed)) {
+      expect(card.position.y + CARD_HEIGHT).toBeLessThanOrEqual(box.height!);
+      expect(card.position.x + NODE_WIDTH).toBeLessThanOrEqual(box.width!);
+    }
+  });
 });

@@ -44,7 +44,7 @@ const CONTAINER_INSET = 16;
  * elk's own spelling — `[top=…,left=…,bottom=…,right=…]` — is the only format
  * the layered algorithm parses for this option.
  */
-export const CONTAINER_PADDING = `[top=${HEADER_HEIGHT + CONTAINER_INSET},left=${CONTAINER_INSET},bottom=${CONTAINER_INSET},right=${CONTAINER_INSET}]`;
+const CONTAINER_PADDING = `[top=${HEADER_HEIGHT + CONTAINER_INSET},left=${CONTAINER_INSET},bottom=${CONTAINER_INSET},right=${CONTAINER_INSET}]`;
 
 /** The gap the grid fallback leaves between boxes, containers and cards alike. */
 const GRID_GAP = 24;
@@ -95,7 +95,13 @@ function groupByContainer(
       if (!groups.has(node.id)) groups.set(node.id, []);
       continue;
     }
-    const parent = node.parentId as string;
+    // `toFlow` gives every card a `parentId`, but React Flow's type does not,
+    // and a cast would hand elk a child under the group key `undefined` —
+    // which elk rejects, taking the whole graph down the grid fallback for one
+    // malformed node. Dropping the card costs that card its position and
+    // nothing else.
+    const parent = node.parentId;
+    if (parent === undefined) continue;
     const cards = groups.get(parent);
     if (cards === undefined) groups.set(parent, [node]);
     else cards.push(node);

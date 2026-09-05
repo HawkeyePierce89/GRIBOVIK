@@ -23,7 +23,27 @@ export function SymbolNode({ data }: NodeProps<SymbolFlowNode>) {
     <div className="symbol-node">
       <Handle type="target" position={Position.Left} isConnectable={false} />
 
-      <div className="symbol-row">
+      {/* The collapsed row, not the whole card, is the control: the expanded
+          overlay below holds selectable diff text, which has no business
+          inside a `button`. `click()` rather than a callback threaded through
+          `data` — the click bubbles to the wrapper React Flow hangs
+          `onNodeClick` off, so Enter and Space reach the canvas by exactly the
+          path a pointer does, and this component stays a pure function of
+          `data`. React Flow's own Enter/Space handler is dead here: it is
+          gated on `isSelectable`, and every node is emitted `selectable:
+          false`. */}
+      <div
+        className="symbol-row"
+        role="button"
+        tabIndex={0}
+        aria-expanded={data.expanded === true}
+        onKeyDown={(event) => {
+          if (event.key !== "Enter" && event.key !== " ") return;
+          // Space scrolls the page otherwise, and the canvas is the page.
+          event.preventDefault();
+          event.currentTarget.click();
+        }}
+      >
         {/* The path is the container header's job now; a card only has to say
             which symbol it is, and `title` keeps the full name reachable when
             the ellipsis takes it. */}
