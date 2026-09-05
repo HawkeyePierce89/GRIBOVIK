@@ -59,22 +59,22 @@ This is a CI-only change: YAML and Markdown, no Rust or TypeScript.
 **Files:**
 - Modify: `.github/workflows/pr-graph.yml`
 
-- [ ] Confirm the action majors to pin by reading
+- [x] Confirm the action majors to pin by reading
       `.github/workflows/release.yml`: `actions/checkout@v7`,
       `actions/setup-node@v7`, `actions-rust-lang/setup-rust-toolchain@v1`,
       `actions/upload-artifact@v7`. These are the majors the repository already
       uses successfully; reuse them verbatim and pin no SHAs.
-- [ ] Keep the existing header unchanged: `name: PR Graph`, `on: pull_request:
+- [x] Keep the existing header unchanged: `name: PR Graph`, `on: pull_request:
       branches: [master]`, `permissions: contents: read`, job `build-graph` on
       `ubuntu-latest`.
-- [ ] Keep the `Checkout` step exactly as it is — `actions/checkout@v7` with
+- [x] Keep the `Checkout` step exactly as it is — `actions/checkout@v7` with
       `fetch-depth: 0`. Do not add a `ref:`; the default merge ref is what makes
       the built binary include the PR's changes on top of master, and
       `fetch-depth: 0` stays for the merge-base computation.
-- [ ] Delete the `Download release` step in full, including its `env:` block
+- [x] Delete the `Download release` step in full, including its `env:` block
       with `GH_TOKEN` and `GH_REPO`. No `gh` invocation and no release download
       may remain anywhere in the file.
-- [ ] Insert, in this order and strictly before any cargo step:
+- [x] Insert, in this order and strictly before any cargo step:
       1. `actions/setup-node@v7` with `node-version: '22'`, `cache: npm`,
          `cache-dependency-path: web/package-lock.json`.
       2. `Build web`: `working-directory: web`, `run: npm ci && npm run build`.
@@ -82,22 +82,22 @@ This is a CI-only change: YAML and Markdown, no Rust or TypeScript.
          and `cache: true` (the action's default; stated explicitly here because
          the requirement names cargo build caching).
       4. `Build Rust binary`: `run: cargo build --release --locked`.
-- [ ] Change the `Generate graph` step to invoke `./target/release/gribovik`
+- [x] Change the `Generate graph` step to invoke `./target/release/gribovik`
       instead of `"$RUNNER_TEMP/gribovik"`, keeping everything else: the
       `BASE`/`HEAD` env from `github.event.pull_request.base.sha` /
       `head.sha`, `shell: bash`, `set -euo pipefail`, and the `--export
       review.html "$BASE" "$HEAD"` argument form.
-- [ ] Leave the `Upload artifact` step byte-identical:
+- [x] Leave the `Upload artifact` step byte-identical:
       `actions/upload-artifact@v7`, `name: pr-graph-${{
       github.event.pull_request.number }}`, `path: review.html`,
       `if-no-files-found: ignore`.
-- [ ] Do not touch `.github/workflows/release.yml`, and do not extract a
+- [x] Do not touch `.github/workflows/release.yml`, and do not extract a
       composite action — the four duplicated build steps are accepted for this
       change.
-- [ ] Verify: `actionlint .github/workflows/pr-graph.yml` passes clean.
-- [ ] Verify: `grep -n 'gh \|gh release\|GH_TOKEN\|GH_REPO\|RUNNER_TEMP'
+- [x] Verify: `actionlint .github/workflows/pr-graph.yml` passes clean.
+- [x] Verify: `grep -n 'gh \|gh release\|GH_TOKEN\|GH_REPO\|RUNNER_TEMP'
       .github/workflows/pr-graph.yml` returns nothing.
-- [ ] Verify the step order mechanically: in the file, the `Build web` step's
+- [x] Verify the step order mechanically: in the file, the `Build web` step's
       line number is lower than every line mentioning `cargo`.
 
 ### Task 2: Reproduce the workflow's sequence locally
