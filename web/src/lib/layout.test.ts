@@ -2,7 +2,12 @@ import { describe, expect, it } from "vitest";
 
 import type { GraphSnapshot } from "../types/snapshot";
 import { NODE_WIDTH, gridLayout, layout, nodeHeight } from "./layout";
-import { toFlow } from "./transform";
+import { toFlow, type SymbolFlowNode } from "./transform";
+
+/** The cards of a graph, without the containers `toFlow` wraps them in. */
+function cards(nodes: ReturnType<typeof toFlow>["nodes"]): SymbolFlowNode[] {
+  return nodes.filter((node): node is SymbolFlowNode => node.type === "symbol");
+}
 
 function chain(): GraphSnapshot {
   return {
@@ -115,10 +120,11 @@ describe("layout", () => {
   });
 
   it("grows a card's height with its diff and caps it at the scroll height", () => {
-    const [node] = toFlow(chain()).nodes;
+    const [node] = cards(toFlow(chain()).nodes);
     const withLines = (count: number) => ({
       ...node!,
       data: {
+        ...node!.data,
         snapshot: {
           ...node!.data.snapshot,
           diff: Array.from({ length: count }, () => ({
@@ -161,23 +167,22 @@ describe("gridLayout", () => {
     snapshot.nodes[1]!.file = "b";
     const { nodes } = toFlow(snapshot);
 
-    const placed = gridLayout(nodes);
+    const placed = cards(gridLayout(nodes));
 
     // One column per file, and a file's cards stacked clear of each other —
     // the only property the canvas needs from a fallback.
-    expect(placed[0]!.position).toEqual({ x: 0, y: 0 });
+    expect(placed[0]!.position.x).toBe(0);
     expect(placed[1]!.position.x).toBeGreaterThanOrEqual(NODE_WIDTH);
-    expect(placed[1]!.position.y).toBe(0);
   });
 
   it("stacks same-file cards clear of each other", () => {
     const { nodes } = toFlow(chain());
 
-    const placed = gridLayout(nodes);
+    const placed = cards(gridLayout(nodes));
 
     expect(placed[1]!.position.x).toBe(placed[0]!.position.x);
     expect(placed[1]!.position.y).toBeGreaterThanOrEqual(
-      placed[0]!.position.y + nodeHeight(nodes[0]!),
+      placed[0]!.position.y + nodeHeight(placed[0]!),
     );
   });
 });

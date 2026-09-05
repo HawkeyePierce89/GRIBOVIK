@@ -24,7 +24,7 @@ import { ProgressPanel } from "./components/ProgressPanel";
 import { SymbolNode } from "./components/SymbolNode";
 import { gridLayout, layout } from "./lib/layout";
 import { loadSnapshot } from "./lib/snapshot";
-import { toFlow, type SymbolFlowNode } from "./lib/transform";
+import { toFlow, type GraphFlowNode } from "./lib/transform";
 import type { GraphSnapshot } from "./types/snapshot";
 
 const nodeTypes = { symbol: SymbolNode } satisfies NodeTypes;
@@ -32,7 +32,7 @@ const nodeTypes = { symbol: SymbolNode } satisfies NodeTypes;
 /** What the initial fetch produced, once it has landed. */
 type Loaded = {
   snapshot: GraphSnapshot;
-  nodes: SymbolFlowNode[];
+  nodes: GraphFlowNode[];
   edges: Edge[];
   /** `meta.warnings` plus anything that degraded on the way in. */
   warnings: string[];

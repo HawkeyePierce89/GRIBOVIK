@@ -8,7 +8,7 @@
 
 import type { Edge } from "@xyflow/react";
 
-import type { SymbolFlowNode } from "./transform";
+import type { GraphFlowNode } from "./transform";
 
 /** Card width, fixed by `.symbol-node` in the stylesheet. */
 export const NODE_WIDTH = 420;
@@ -61,7 +61,8 @@ const LAYOUT_OPTIONS: Record<string, string> = {
  * lines it carries, and telling elk that one card is 200px and another 430px
  * is what keeps a long diff from being drawn over its neighbour.
  */
-export function nodeHeight(node: SymbolFlowNode): number {
+export function nodeHeight(node: GraphFlowNode): number {
+  if (node.type === "file") return CARD_CHROME_HEIGHT;
   const lines = node.data.snapshot.diff.length;
   return (
     CARD_CHROME_HEIGHT + Math.min(lines * DIFF_LINE_HEIGHT, MAX_DIFF_HEIGHT)
@@ -76,11 +77,12 @@ export function nodeHeight(node: SymbolFlowNode): number {
  * reviewer the whole review. The columns are wide enough that no two cards
  * overlap, which is the only property the canvas actually needs.
  */
-export function gridLayout(nodes: SymbolFlowNode[]): SymbolFlowNode[] {
+export function gridLayout(nodes: GraphFlowNode[]): GraphFlowNode[] {
   const columns = new Map<string, number>();
   const nextY = new Map<string, number>();
   return nodes.map((node) => {
-    const file = node.data.snapshot.file;
+    const file =
+      node.type === "file" ? node.data.file : node.data.snapshot.file;
     if (!columns.has(file)) columns.set(file, columns.size);
     const y = nextY.get(file) ?? 0;
     nextY.set(file, y + nodeHeight(node) + 60);
@@ -122,9 +124,9 @@ function timeout(ms: number): { promise: Promise<never>; cancel: () => void } {
  * Rejects if elk does not answer within [`LAYOUT_TIMEOUT_MS`].
  */
 export async function layout(
-  nodes: SymbolFlowNode[],
+  nodes: GraphFlowNode[],
   edges: Edge[],
-): Promise<SymbolFlowNode[]> {
+): Promise<GraphFlowNode[]> {
   if (nodes.length === 0) return [];
 
   const graph = {

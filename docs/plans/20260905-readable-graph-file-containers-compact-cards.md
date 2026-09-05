@@ -83,15 +83,15 @@ Decisions taken (with reasons, per the ticket):
 **Files:**
 - Modify: `web/src/lib/transform.ts`, `web/src/lib/transform.test.ts`
 
-- [ ] add `lineCounts(diff: DiffLine[]): { added: number; removed: number }` — counts `add` / `del` tags; export it, both the card and the container header use it
-- [ ] add `FileNodeData = { file: string; cardCount: number; added: number; removed: number }`, `FileFlowNode = Node<FileNodeData, "file">`, and `GraphFlowNode = SymbolFlowNode | FileFlowNode`
-- [ ] add `containerId(file: string): string` returning `` `file:${file}` `` with a comment on why it cannot collide with a card id
-- [ ] extend `SymbolNodeData` with the card's own `added`/`removed` counts so the collapsed card does not recount on every render
-- [ ] `toFlow` now emits, per file in first-appearance order, the container node followed by its cards — React Flow requires a parent to precede its children in the array; cards carry `parentId: containerId(file)` and `extent: "parent"`, containers carry `zIndex: 0` and cards `zIndex: 1`
-- [ ] `toFlow` returns a third field `files: FileSummary[]` (`{ file, containerId, cardCount, added, removed }`) for the navigation panel
-- [ ] give every edge `type: "smoothstep"` alongside the existing `markerEnd`/dash styling
-- [ ] tests: one container per file with the right `cardCount`/`+N −M`; containers precede their children; every card has the matching `parentId`; the `kind === "file"` card is an ordinary child, not the container; `files` summary matches; edges keep their endpoints, arrowhead, dash and gain `smoothstep`
-- [ ] run `cd web && npm test && npm run typecheck` — must pass before Task 2
+- [x] add `lineCounts(diff: DiffLine[]): { added: number; removed: number }` — counts `add` / `del` tags; export it, both the card and the container header use it
+- [x] add `FileNodeData = { file: string; cardCount: number; added: number; removed: number }`, `FileFlowNode = Node<FileNodeData, "file">`, and `GraphFlowNode = SymbolFlowNode | FileFlowNode`
+- [x] add `containerId(file: string): string` returning `` `file:${file}` `` with a comment on why it cannot collide with a card id
+- [x] extend `SymbolNodeData` with the card's own `added`/`removed` counts so the collapsed card does not recount on every render
+- [x] `toFlow` now emits, per file in first-appearance order, the container node followed by its cards — React Flow requires a parent to precede its children in the array; cards carry `parentId: containerId(file)` and `extent: "parent"`, containers carry `zIndex: 0` and cards `zIndex: 1`
+- [x] `toFlow` returns a third field `files: FileSummary[]` (`{ file, containerId, cardCount, added, removed }`) for the navigation panel
+- [x] give every edge `type: "smoothstep"` alongside the existing `markerEnd`/dash styling
+- [x] tests: one container per file with the right `cardCount`/`+N −M`; containers precede their children; every card has the matching `parentId`; the `kind === "file"` card is an ordinary child, not the container; `files` summary matches; edges keep their endpoints, arrowhead, dash and gain `smoothstep`
+- [x] run `cd web && npm test && npm run typecheck` — must pass before Task 2
 
 ### Task 2: Hierarchical layout and container-aware grid fallback
 
