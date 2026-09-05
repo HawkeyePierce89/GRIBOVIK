@@ -137,14 +137,14 @@ Decisions taken (with reasons, per the ticket):
 - Modify: `web/src/App.tsx`, `web/src/components/ProgressPanel.tsx`
 - Create: `web/src/components/ProgressPanel.test.tsx`
 
-- [ ] `Loaded` carries the `files` summary from `toFlow`; `Graph` wraps its subtree in `<ReactFlowProvider>` so the panel can call `fitView`
-- [ ] `Graph` holds `selectedId` and `hoverId`; `focusId = selectedId ?? hoverId`; display nodes/edges come from `useMemo(() => applyFocus(nodes, edges, focusId, selectedId), …)` over the `useNodesState`/`useEdgesState` arrays, so drags and the layout survive a selection
-- [ ] `onNodeClick` toggles `selectedId` for a `symbol` node and clears it for a container; `onPaneClick` clears it; a window `keydown` effect clears it on Escape
-- [ ] `onNodeMouseEnter`/`Leave` set `hoverId` (preview only — selection remains the durable way in)
-- [ ] `ProgressPanel` gains the file list: total card count on top, then one scrollable row per file with its path, card count and `+N −M`, sorted by path; clicking a row calls the `onSelectFile` prop
-- [ ] `App` passes `onSelectFile` = `fitView({ nodes: [{ id: containerId }], duration: 400, padding: 0.2, maxZoom: 1 })` from `useReactFlow()`
-- [ ] tests (`ProgressPanel.test.tsx`, jsdom): the total card count renders; one row per file with its counts; clicking a row calls `onSelectFile` with that file's container id
-- [ ] run `cd web && npm test && npm run typecheck` — must pass before Task 6
+- [x] `Loaded` carries the `files` summary from `toFlow`; `Graph` wraps its subtree in `<ReactFlowProvider>` so the panel can call `fitView`
+- [x] `Graph` holds `selectedId` and `hoverId`; `focusId = selectedId ?? hoverId`; display nodes/edges come from `useMemo(() => applyFocus(nodes, edges, focusId, selectedId), …)` over the `useNodesState`/`useEdgesState` arrays, so drags and the layout survive a selection
+- [x] `onNodeClick` toggles `selectedId` for a `symbol` node and clears it for a container; `onPaneClick` clears it; a window `keydown` effect clears it on Escape
+- [x] `onNodeMouseEnter`/`Leave` set `hoverId` (preview only — selection remains the durable way in)
+- [x] `ProgressPanel` gains the file list: total card count on top, then one scrollable row per file with its path, card count and `+N −M`, sorted by path; clicking a row calls the `onSelectFile` prop
+- [x] `App` passes `onSelectFile` = `fitView({ nodes: [{ id: containerId }], duration: 400, padding: 0.2, maxZoom: 1 })` from `useReactFlow()`
+- [x] tests (`ProgressPanel.test.tsx`, jsdom): the total card count renders; one row per file with its counts; clicking a row calls `onSelectFile` with that file's container id
+- [x] run `cd web && npm test && npm run typecheck` — must pass before Task 6
 
 ### Task 6: Verify acceptance criteria and record the layout timings
 

@@ -49,7 +49,10 @@ body {
 /* Progress panel ------------------------------------------------------- */
 
 .progress-panel {
+  display: flex;
   flex: 0 0 220px;
+  flex-direction: column;
+  min-height: 0;
   padding: 1rem;
   background: var(--panel);
   border-right: 1px solid var(--line);
@@ -64,6 +67,56 @@ body {
 .progress-total {
   margin: 0.25rem 0 1rem;
   color: var(--muted);
+}
+
+/* The index of the graph: one row per changed file, scrolling on its own so
+   the title and the total stay put on a branch with a hundred files. */
+
+.file-list {
+  margin: 0;
+  padding: 0;
+  overflow-y: auto;
+  flex: 1;
+  min-height: 0;
+  list-style: none;
+}
+
+.file-row {
+  display: flex;
+  align-items: baseline;
+  gap: 0.4rem;
+  width: 100%;
+  padding: 0.3rem 0.35rem;
+  border: 0;
+  border-radius: 5px;
+  background: none;
+  color: inherit;
+  cursor: pointer;
+  font: inherit;
+  text-align: left;
+}
+
+.file-row:hover,
+.file-row:focus-visible {
+  background: var(--card);
+}
+
+.file-row-path {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  direction: rtl; /* A path is identified by its tail; elide the front. */
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.78rem;
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.file-row-count {
+  flex: none;
+  color: var(--muted);
+  font-size: 0.72rem;
 }
 
 /* Canvas --------------------------------------------------------------- */
