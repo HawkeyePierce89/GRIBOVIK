@@ -9,6 +9,10 @@ produced by the code under review and the workflow stops depending on releases.
 Then update the documentation that still claims a release download happens.
 
 This is a CI-only change: YAML and Markdown, no Rust or TypeScript.
+(Amended during review: the branch also adds one test to
+`tests/export_html.rs` and one paragraph to `README.md`. Both are recorded
+against the tasks below; the "no Rust or TypeScript" scope held for the
+implementation itself, not for the review that followed it.)
 
 ## Context
 
@@ -24,7 +28,9 @@ This is a CI-only change: YAML and Markdown, no Rust or TypeScript.
   - `README.md` — checked: the PR-artifact paragraph (lines 122-127) says only
     "the provided GitHub Actions PR workflow ... will attach this file as an
     artifact". It does not mention the release binary, so per the ticket it is
-    left unchanged.
+    left unchanged. (Amended during review: it did change, for a reason the
+    ticket did not anticipate — building from the checkout makes the artifact
+    PR-authored content, so the paragraph now warns the reviewer who opens it.)
 - Related patterns:
   - `release.yml`'s `build` job is the template: `actions/setup-node@v7`
     (`node-version: '22'`, `cache: npm`, `cache-dependency-path:
@@ -157,6 +163,10 @@ This is a CI-only change: YAML and Markdown, no Rust or TypeScript.
 - [x] Confirm `README.md` needs no edit: `grep -n 'release' README.md` — the
       PR-artifact paragraph must contain no mention of the release binary.
       (Verified during exploration; re-check so the claim is not stale.)
+      (Amended during review: the grep held — no release-binary mention — but
+      the paragraph gained a warning that the artifact is now built by the PR's
+      own exporter and frontend and is therefore untrusted content in the
+      reviewer's browser.)
 
 ### Task 4: Verify acceptance criteria
 
@@ -170,14 +180,16 @@ This is a CI-only change: YAML and Markdown, no Rust or TypeScript.
       `.github/workflows/pr-graph.yml` and `CLAUDE.md`; no Rust or TypeScript
       file may appear. (Amended during review: `tests/export_html.rs` gained a
       binary-level test asserting the empty-range export exits 0 and writes no
-      file — the path `if-no-files-found: ignore` covers. That is a deliberate
-      addition, not a scope violation.)
+      file — the path `if-no-files-found: ignore` covers, and `README.md` gained
+      the artifact-trust paragraph. Both are deliberate additions, not scope
+      violations.)
 
 ### Task 5: Update documentation
 
 - [x] `README.md`: no change expected (its PR-artifact paragraph does not
       mention the release binary). If Task 3's re-check found otherwise, correct
-      just that sentence.
+      just that sentence. (Amended during review: one paragraph was added there
+      after all — the artifact-trust warning described in Task 3.)
 - [x] `CLAUDE.md`: already updated in Task 3; confirm the diff of that file
       contains the rewritten description and the deleted release-currency
       paragraph, and nothing else.
