@@ -215,8 +215,15 @@ toolchain action, which is that action's default either way.
 PR that merely warns fails `build-graph` and gets no graph — which matches the
 gate below treating warnings as errors. Building the PR takes minutes where the
 old release download took seconds, so `pr-graph.yml` carries a `concurrency`
-group cancelling a superseded run and a `timeout-minutes` on the job. Two
-conventions hold in both:
+group cancelling a superseded run and a `timeout-minutes` on the job. Building
+from the checkout also means `pr-graph.yml` executes PR-authored code — npm
+lifecycle scripts, `build.rs`, proc macros, the built binary — where the
+release download executed only a trusted artifact, so it stays on
+`pull_request` (never `pull_request_target`) with a read-only token and no
+secrets, and checks out with `persist-credentials: false`: the analysis shells
+out only to local `rev-parse`, `merge-base`, `diff` and `show`, so nothing
+after the checkout needs the token that `actions/checkout` would otherwise
+leave in `.git/config`. Two conventions hold in both:
 
 - Actions are pinned to a major tag (`@v7`, `@v8`), never to a SHA.
 - Any step invoking `gh` sets `GH_REPO: ${{ github.repository }}` in its own

@@ -168,7 +168,10 @@ This is a CI-only change: YAML and Markdown, no Rust or TypeScript.
 - [x] `cd web && npm test && npm run typecheck`
 - [x] `git diff --stat` — confirm the change touches only
       `.github/workflows/pr-graph.yml` and `CLAUDE.md`; no Rust or TypeScript
-      file may appear.
+      file may appear. (Amended during review: `tests/export_html.rs` gained a
+      binary-level test asserting the empty-range export exits 0 and writes no
+      file — the path `if-no-files-found: ignore` covers. That is a deliberate
+      addition, not a scope violation.)
 
 ### Task 5: Update documentation
 
@@ -184,12 +187,11 @@ This is a CI-only change: YAML and Markdown, no Rust or TypeScript.
 These cannot be run locally and are not task checkboxes:
 
 - Push the branch and open a PR against `master`.
-- Watch the `build-graph` check on that PR. It must go green. Because this PR
-  touches only YAML and Markdown, the expected outcome is gribovik reporting no
-  reviewable changes, no `review.html` written, and the upload step passing
-  quietly via `if-no-files-found: ignore` — the already-verified empty-PR path.
-  This run is the one end-to-end verification that the new build-from-source
-  workflow works.
+- Watch the `build-graph` check on that PR. It must go green. This PR does
+  change a Rust file (`tests/export_html.rs`), so expect a real graph and an
+  uploaded `review.html` rather than the empty-PR path; that path is covered by
+  the binary-level test instead. This run is the one end-to-end verification
+  that the new build-from-source workflow works.
 - If the check fails, read the failing step's log before changing anything: a
   web-build failure means the ordering or Node setup is wrong, a cargo failure
   means `--locked` or the toolchain step, and an export failure means the binary
