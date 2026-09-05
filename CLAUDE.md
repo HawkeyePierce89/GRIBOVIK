@@ -199,22 +199,43 @@ cargo run -- --port 7777 --assets web/dist   # then npm run dev in web/
 
 ## The two workflows
 
-`release.yml` builds the binaries on a `v*` tag. `pr-graph.yml` downloads the
-Linux binary from the latest release and uploads its `--export` output as a
-per-PR artifact. Two conventions hold in both:
+`release.yml` builds the binaries on a `v*` tag. `pr-graph.yml` builds gribovik
+from the PR's own checkout and uploads its `--export` output as a per-PR
+artifact, so the graph attached to a PR is produced by the code under review.
+Both share the same build order — `setup-node` with npm caching, `npm ci && npm
+run build` in `web/`, then the stable toolchain and `cargo build --release
+--locked` — because `build.rs` refuses to compile without `web/dist/index.html`
+and `web/dist/export.html`, so the web build must strictly precede every cargo
+step. Those four steps are deliberately duplicated across the two files rather
+than factored into a composite action — not verbatim, though: `release.yml`
+interposes a `Verify native target` check before its cargo step for the
+five-target matrix, and only `pr-graph.yml` spells out `cache: true` on the
+toolchain action, which is that action's default either way.
+`setup-rust-toolchain` also exports `RUSTFLAGS: -D warnings` by default, so a
+PR that merely warns fails `build-graph` and gets no graph — which matches the
+gate below treating warnings as errors. Building the PR takes minutes where the
+old release download took seconds, so `pr-graph.yml` carries a `concurrency`
+group cancelling a superseded run and a `timeout-minutes` on the job. Building
+from the checkout also means `pr-graph.yml` executes PR-authored code — npm
+lifecycle scripts, `build.rs`, proc macros, the built binary — where the
+release download executed only a trusted artifact, so it stays on
+`pull_request` (never `pull_request_target`) with a read-only token and no
+secrets, and checks out with `persist-credentials: false`: the analysis shells
+out only to local `rev-parse`, `merge-base`, `diff` and `show`, so nothing
+after the checkout needs the token that `actions/checkout` would otherwise
+leave in `.git/config`. Those measures bound what a hostile PR reaches on the
+*runner*; they say nothing about the artifact, which is now written by the PR's
+own exporter and frontend and is therefore untrusted content in the reviewer's
+browser — README says so where it tells a reviewer to open the file. Two
+conventions hold in both:
 
 - Actions are pinned to a major tag (`@v7`, `@v8`), never to a SHA.
 - Any step invoking `gh` sets `GH_REPO: ${{ github.repository }}` in its own
-  `env:` block — unconditionally, never left to inference. A step that `cd`s
-  outside the checkout, as `pr-graph.yml`'s download does, has no working
-  directory for `gh` to read a repository from and exits with
-  `failed to run git: fatal: not a git repository`; the steps that do stay in
-  the workspace name it anyway, so the rule needs no judgement call.
-
-`pr-graph.yml` is only ever as current as the latest *published* release —
-drafts do not count — so a flag added after that tag is not in the binary the
-workflow runs. Adding a workflow step that depends on new behavior means
-cutting a release before the workflow can go green.
+  `env:` block — unconditionally, never left to inference. `release.yml`'s
+  publish step is the one that invokes `gh` today. A step that `cd`s outside the
+  checkout has no working directory for `gh` to read a repository from and exits
+  with `failed to run git: fatal: not a git repository`; the steps that do stay
+  in the workspace name it anyway, so the rule needs no judgement call.
 
 ## Checks before calling anything done
 

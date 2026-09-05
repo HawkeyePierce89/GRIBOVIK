@@ -8,26 +8,48 @@ on:
 permissions:
   contents: read
 
+# Building the PR takes minutes where downloading a release took seconds, so a
+# superseded run is cancelled rather than left to finish an artifact nobody
+# will open.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
 jobs:
   build-graph:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
+      # Unlike the release download this replaced, every step below runs code
+      # from the PR: npm lifecycle scripts, `build.rs`, proc macros, and the
+      # binary itself — plus whatever the npm registry and crates.io serve the
+      # build. Nothing after the checkout talks to the *git* remote, though —
+      # the analysis only ever runs local `rev-parse`/`merge-base`/`diff`/`show`
+      # — so the job's token has no reason to sit in `.git/config` where that
+      # code can read it.
       - name: Checkout
         uses: actions/checkout@v7
         with:
           fetch-depth: 0
+          persist-credentials: false
 
-      - name: Download release
-        env:
-          GH_TOKEN: ${{ github.token }}
-          GH_REPO: ${{ github.repository }}
-        shell: bash
-        run: |
-          set -euo pipefail
-          cd "$RUNNER_TEMP"
-          gh release download --pattern '*x86_64-unknown-linux-gnu.tar.gz'
-          tar -xzf ./*-x86_64-unknown-linux-gnu.tar.gz
-          chmod +x gribovik
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - name: Build web
+        working-directory: web
+        run: npm ci && npm run build
+
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          toolchain: stable
+          cache: true
+
+      - name: Build Rust binary
+        run: cargo build --release --locked
 
       - name: Generate graph
         env:
@@ -36,7 +58,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          "$RUNNER_TEMP/gribovik" --export review.html "$BASE" "$HEAD"
+          ./target/release/gribovik --export review.html "$BASE" "$HEAD"
 
       - name: Upload artifact
         uses: actions/upload-artifact@v7
