@@ -105,7 +105,12 @@ body {
   flex: 1;
   min-width: 0;
   overflow: hidden;
-  direction: rtl; /* A path is identified by its tail; elide the front. */
+  /* A path is identified by its tail, so the front is what gives way. The RTL
+     paragraph is what moves the ellipsis to the start; the `<bdi>` around the
+     text is what keeps the path itself reading left to right, because a
+     leading neutral — the dot of `.github/workflows/…` — inherits the
+     paragraph's direction otherwise and is reordered to the far end. */
+  direction: rtl;
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   font-size: 0.78rem;
   text-align: left;
@@ -166,9 +171,10 @@ body {
   background: rgba(25, 28, 38, 0.55);
   border: 1px solid var(--line);
   border-radius: 10px;
-  /* Cards are children of this node in the DOM as well as in the layout, and
-     an expanded card's diff overlay reaches past the container's bottom edge.
-     Clipping here would cut it off. */
+  /* Not `hidden`: React Flow renders every node as a flat sibling, so nothing
+     here clips a card — but a container that scrolled or clipped its own
+     header on a narrow box would hide the file path the reviewer navigates
+     by, and the header is the only thing this box actually contains. */
   overflow: visible;
 }
 

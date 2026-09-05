@@ -45,7 +45,7 @@ web/
     styles.css
     types/snapshot.ts      # the other half of the wire contract
     lib/{transform,layout,elk,snapshot,focus}.ts + *.test.ts
-    components/{SymbolNode,FileNode,DiffView,ProgressPanel}.tsx
+    components/{SymbolNode,FileNode,DiffView,ProgressPanel}.tsx + *.test.tsx
 ```
 
 Unit tests live in `#[cfg(test)] mod tests` next to the code they cover;
@@ -254,10 +254,28 @@ OS-assigned port the proxy cannot find:
 cargo run -- --port 7777 --assets web/dist   # then npm run dev in web/
 ```
 
+Component tests run in jsdom, the rest in node. `vite.config.ts` sets
+`environment: "node"` for the whole suite — the `lib/` tests are pure and a DOM
+would only cost startup — and each `*.test.tsx` opts itself in with a
+`/** @vitest-environment jsdom */` docblock on the first line. That is what
+`jsdom`, `@testing-library/react` and `@testing-library/dom` are dev
+dependencies for. A component rendering a React Flow `Handle` — every node type
+does — has to be wrapped in `<ReactFlowProvider>` in the test, since the handle
+reads the instance store and throws without one.
+
+The canvas adds a second id space on top of the snapshot's: a container is
+`file:<path>`, a card keeps `<file>::<qualified_name>`. They cannot collide
+because a card id always carries a `::`. `toFlow` emits each container
+immediately before its own cards — React Flow resolves `parentId` against the
+nodes it has already seen, so a child ahead of its parent in the array is an
+error rather than a misplacement.
+
 Two decisions in the canvas are load-bearing enough that changing them by
 accident breaks something a test will not catch. **The layout sizes every card
-by its collapsed height** (`CARD_HEIGHT` in `layout.ts`, matched to the
-stylesheet), and expanding a card must never re-run it: `SymbolNode` draws the
+by its collapsed height** (`CARD_HEIGHT` in `layout.ts`, and `HEADER_HEIGHT`
+for the container header elk reserves as top padding — both are the
+stylesheet's numbers copied by hand, and `lib/stylesheet.test.ts` is the only
+thing comparing the two halves), and expanding a card must never re-run it: `SymbolNode` draws the
 diff in an absolutely positioned `.symbol-expanded` overlay, so the node's own
 box keeps the size elk gave it and the canvas cannot shift under the reviewer
 mid-click. Anything that makes a card's box grow with its content brings back
@@ -268,6 +286,14 @@ React Flow's left/right handle centres the moment a node is dragged, so
 consuming them would mean a custom edge component that is wrong exactly when it
 matters; `smoothstep` gives the same orthogonal look, costs nothing per edge,
 and stays correct when a node moves.
+
+The overlay costs the canvas two things that are easy to reintroduce. React
+Flow culls by a node's *measured* box, so `onlyRenderVisibleElements` has to
+stand down while a card is expanded or panning the collapsed row off-screen
+blanks the diff still filling the viewport. And React Flow hangs `onNodeClick`
+off the wrapper the overlay renders inside, where `nodrag`/`nowheel` opt out of
+the drag and the wheel but not the click — so `.symbol-expanded` stops click
+propagation itself, or selecting a line of the diff closes the card.
 
 ## The two workflows
 

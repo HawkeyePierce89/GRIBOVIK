@@ -48,7 +48,10 @@ export function ProgressPanel({
               }}
             >
               <span className="file-row-path" title={file.file}>
-                {file.file}
+                {/* The row elides the front of the path with an RTL
+                    paragraph; the isolate keeps a dot-prefixed path from
+                    having its leading dot reordered to the end. */}
+                <bdi>{file.file}</bdi>
               </span>
               <span className="file-row-count">{file.cardCount}</span>
               <span className="file-counts">

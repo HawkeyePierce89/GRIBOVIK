@@ -76,14 +76,19 @@ export function applyFocus(
   focusId: string | null,
   expandedId: string | null,
 ): { nodes: GraphFlowNode[]; edges: Edge[] } {
-  if (focusId === null && expandedId === null) return { nodes, edges };
-
   // A container has no calls, so focusing one would dim every card on the
   // canvas and highlight nothing. Only a card's neighbourhood means anything.
-  const isCard = nodes.some(
-    (node) => node.type === "symbol" && node.id === focusId,
-  );
+  const isCard =
+    focusId !== null &&
+    nodes.some((node) => node.type === "symbol" && node.id === focusId);
   const focus = isCard ? focusId : null;
+
+  // After `focus`, not before: a container is the biggest hover target on the
+  // canvas and resolves to no focus at all, so pointing at one would otherwise
+  // return a content-identical array with a new identity — and React Flow
+  // rebuilds its whole node lookup for every one of those.
+  if (focus === null && expandedId === null) return { nodes, edges };
+
   const near = focus === null ? null : neighbourhood(edges, focus);
 
   return {

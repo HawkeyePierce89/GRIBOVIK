@@ -1,13 +1,13 @@
 /**
  * @vitest-environment jsdom
  *
- * The lib tests run in node; only the two component tests need a DOM, so they
- * opt in here rather than the config switching the whole suite over.
+ * The lib tests run in node; only the component tests need a DOM, so each of
+ * them opts in here rather than the config switching the whole suite over.
  */
 
 import { ReactFlowProvider } from "@xyflow/react";
-import { cleanup, render, screen } from "@testing-library/react";
-import { afterEach, describe, expect, it } from "vitest";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import type { ComponentProps } from "react";
 
 import type { SymbolNodeData } from "../lib/transform";
@@ -41,7 +41,7 @@ function card(overrides: Partial<SnapshotNode> = {}): SnapshotNode {
  * `Handle` reads React Flow's store, so a bare `render` of the node throws.
  * The provider is the smallest thing that supplies one.
  */
-function draw(data: SymbolNodeData) {
+function draw(data: SymbolNodeData, onWrapperClick?: () => void) {
   // The component only ever reads `data`; the rest of `NodeProps` is React
   // Flow's business and never reaches the markup, so the cast stands in for
   // two dozen fields no assertion here would look at.
@@ -50,7 +50,12 @@ function draw(data: SymbolNodeData) {
   >;
   render(
     <ReactFlowProvider>
-      <SymbolNode {...props} />
+      {/* React Flow's own wrapper is where `onNodeClick` is hung; this div
+          stands in for it, so a click that escapes the card reaches the spy
+          exactly as it would reach the canvas. */}
+      <div onClick={onWrapperClick}>
+        <SymbolNode {...props} />
+      </div>
     </ReactFlowProvider>,
   );
 }
@@ -86,6 +91,45 @@ describe("SymbolNode", () => {
     // that would otherwise zoom or pan under the pointer.
     expect(overlay?.className).toContain("nowheel");
     expect(overlay?.className).toContain("nodrag");
+  });
+
+  it("a click inside the expanded diff never reaches the canvas", () => {
+    // Otherwise selecting a line of the diff, or reaching for its scrollbar,
+    // toggles the selection off and closes the card being read.
+    const clicked = vi.fn();
+    draw({ snapshot: card(), added: 1, removed: 0, expanded: true }, clicked);
+
+    fireEvent.click(screen.getByText("let x = 1;"));
+
+    expect(clicked).not.toHaveBeenCalled();
+  });
+
+  it("a click on the collapsed row does reach the canvas", () => {
+    const clicked = vi.fn();
+    draw({ snapshot: card(), added: 1, removed: 0 }, clicked);
+
+    fireEvent.click(screen.getByText("alpha"));
+
+    expect(clicked).toHaveBeenCalledTimes(1);
+  });
+
+  it("badges an added and a deleted card by their change kind", () => {
+    draw({ snapshot: card({ change: "added" }), added: 4, removed: 0 });
+    expect(document.querySelector(".badge-added")?.textContent).toBe("added");
+
+    cleanup();
+
+    draw({ snapshot: card({ change: "deleted" }), added: 0, removed: 4 });
+    expect(document.querySelector(".badge-deleted")?.textContent).toBe(
+      "deleted",
+    );
+  });
+
+  it("says so rather than drawing an empty panel for a card with no diff", () => {
+    draw({ snapshot: card({ diff: [] }), added: 0, removed: 0, expanded: true });
+
+    expect(screen.getByText("no diff lines")).toBeDefined();
+    expect(document.querySelector(".diff")).toBeNull();
   });
 
   it("a file-level card is badged `file` and shows no kind", () => {

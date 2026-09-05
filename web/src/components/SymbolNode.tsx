@@ -39,7 +39,16 @@ export function SymbolNode({ data }: NodeProps<SymbolFlowNode>) {
       </div>
 
       {data.expanded === true && (
-        <div className="symbol-expanded nowheel nodrag">
+        // React Flow hangs `onNodeClick` off the wrapper this sits inside, and
+        // `nowheel`/`nodrag` opt out of the wheel and the drag but not the
+        // click. Without the stop, selecting a line of the diff — or reaching
+        // for its scrollbar — bubbles up and collapses the card being read.
+        <div
+          className="symbol-expanded nowheel nodrag"
+          onClick={(event) => {
+            event.stopPropagation();
+          }}
+        >
           <DiffView diff={node.diff} />
         </div>
       )}

@@ -16,12 +16,15 @@ Files involved:
 - Modify: `web/src/lib/transform.ts`, `web/src/lib/layout.ts`, `web/src/App.tsx`,
   `web/src/components/SymbolNode.tsx`, `web/src/components/ProgressPanel.tsx`,
   `web/src/styles.css`, `web/src/lib/transform.test.ts`, `web/src/lib/layout.test.ts`,
-  `web/vite.config.ts`, `web/package.json`
+  `web/package.json`
 - Create: `web/src/components/FileNode.tsx`, `web/src/lib/focus.ts`,
   `web/src/lib/focus.test.ts`, `web/src/components/SymbolNode.test.tsx`,
-  `web/src/components/ProgressPanel.test.tsx`
+  `web/src/components/FileNode.test.tsx`,
+  `web/src/components/ProgressPanel.test.tsx`, `web/src/lib/stylesheet.test.ts`
 - Untouched: everything under `src/` (Rust), `web/src/types/snapshot.ts`,
-  `web/src/lib/snapshot.ts`, `web/src/lib/elk.ts`, `web/src/components/DiffView.tsx`
+  `web/src/lib/snapshot.ts`, `web/src/lib/elk.ts`, `web/src/components/DiffView.tsx`,
+  and `web/vite.config.ts` — Task 4 resolved to keep `environment: "node"` and
+  opt each `.test.tsx` in with a docblock instead
 
 Related patterns:
 
@@ -35,8 +38,8 @@ Related patterns:
 Dependencies:
 
 - New dev deps `jsdom` and `@testing-library/react` (+ `@testing-library/dom`)
-  so the two presentational components have real tests. `vite.config.ts` keeps
-  `environment: "node"`; the two `.test.tsx` files opt in with a
+  so the presentational components have real tests. `vite.config.ts` keeps
+  `environment: "node"`; each `.test.tsx` file opts in with a
   `@vitest-environment jsdom` docblock, so the existing lib tests are unaffected.
 
 Decisions taken (with reasons, per the ticket):
@@ -72,7 +75,7 @@ Decisions taken (with reasons, per the ticket):
   existing `*.test.ts`-beside-the-code convention.
 - Complete each task fully before moving to the next.
 - Pure logic goes in `web/src/lib/*` and is tested in the node environment;
-  only the two presentational components use jsdom.
+  only the presentational components use jsdom.
 - **CRITICAL: every task MUST include new/updated tests**
 - **CRITICAL: all tests must pass before starting next task** — `cd web && npm test && npm run typecheck`
 
@@ -119,10 +122,10 @@ Decisions taken (with reasons, per the ticket):
 ### Task 4: Compact card, expanded overlay, file container component
 
 **Files:**
-- Modify: `web/src/components/SymbolNode.tsx`, `web/src/styles.css`, `web/vite.config.ts`, `web/package.json`
-- Create: `web/src/components/FileNode.tsx`, `web/src/components/SymbolNode.test.tsx`
+- Modify: `web/src/components/SymbolNode.tsx`, `web/src/styles.css`, `web/package.json`
+- Create: `web/src/components/FileNode.tsx`, `web/src/components/SymbolNode.test.tsx`, `web/src/components/FileNode.test.tsx`
 
-- [x] add `jsdom`, `@testing-library/react` and `@testing-library/dom` as dev deps; keep `environment: "node"` in `vite.config.ts` and opt the `.test.tsx` files into jsdom with a `@vitest-environment jsdom` docblock
+- [x] add `jsdom`, `@testing-library/react` and `@testing-library/dom` as dev deps; keep `environment: "node"` in `vite.config.ts` (unmodified) and opt each `.test.tsx` file into jsdom with a `@vitest-environment jsdom` docblock
 - [x] `SymbolNode` renders collapsed by default: name, kind, change badge, `+N −M`, on a fixed `CARD_HEIGHT` row; the file path moves off the card (its container header carries it) and the name gets an ellipsis so a long name cannot grow the box
 - [x] when `data.expanded`, the card additionally renders the existing `DiffView` in an absolutely positioned panel anchored under the collapsed row (`.symbol-expanded`), keeping the `nowheel nodrag` wrapper and the `.diff` scroll behaviour — the node's own box keeps its collapsed size, so nothing re-flows and the canvas cannot jump
 - [x] `FileNode`: a container box with a header showing the file path, `N cards` and `+N −M`; sized by the `width`/`height` layout wrote; not connectable, no handles

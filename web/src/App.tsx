@@ -141,13 +141,19 @@ function Canvas({ loaded }: { loaded: Loaded }) {
     [nodes, edges, focusId, selectedId],
   );
 
+  // Both ids, not just the selection: `focusId` falls back to the hover, so
+  // dropping the selection while the pointer still rests on the card would
+  // collapse the diff and leave the dimming exactly as it was.
   const clear = useCallback(() => {
     setSelectedId(null);
+    setHoverId(null);
   }, []);
 
   useEffect(() => {
     function onKeyDown(event: KeyboardEvent) {
-      if (event.key === "Escape") setSelectedId(null);
+      if (event.key !== "Escape") return;
+      setSelectedId(null);
+      setHoverId(null);
     }
     window.addEventListener("keydown", onKeyDown);
     return () => {
@@ -160,6 +166,7 @@ function Canvas({ loaded }: { loaded: Loaded }) {
     // the diff away without aiming at empty canvas.
     if (node.type !== "symbol") {
       setSelectedId(null);
+      setHoverId(null);
       return;
     }
     setSelectedId((current) => (current === node.id ? null : node.id));
@@ -227,10 +234,15 @@ function Canvas({ loaded }: { loaded: Loaded }) {
           // offer to make any.
           deleteKeyCode={null}
           nodesConnectable={false}
-          // A card is a whole diff — hundreds of line elements — and a real
-          // branch has hundreds of cards. Keeping the ones outside the
-          // viewport out of the DOM is what keeps the canvas responsive.
-          onlyRenderVisibleElements
+          // A real branch is hundreds of cards and twice as many edges, and
+          // keeping the ones outside the viewport out of the DOM is what keeps
+          // the canvas responsive. It has to stand down while a card is open,
+          // though: React Flow decides visibility from a node's measured box,
+          // and an expanded card's diff is drawn *outside* that box on
+          // purpose. Panning the 52px row off-screen would cull the node and
+          // blank the panel the reviewer is still reading. One card at a time
+          // is expanded, so the cost is bounded and only paid while reading.
+          onlyRenderVisibleElements={selectedId === null}
           // Low enough that `fitView` can actually fit the graph. elk packs
           // the components a diff of a few hundred cards produces into tens
           // of thousands of pixels each way; clamping at a zoom that cannot

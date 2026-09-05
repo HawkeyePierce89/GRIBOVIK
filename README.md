@@ -66,9 +66,8 @@ altogether and named in the same banner.
 
 ## In the browser
 
-The left panel names the review, counts the cards — changed symbols plus the
-file-level catch-alls — and lists every changed file with its card count and
-`+N −M`. Clicking a file zooms the canvas to that file's container, which is
+The left panel counts the cards — changed symbols plus the file-level
+catch-alls — and lists every changed file with its card count and `+N −M`. Clicking a file zooms the canvas to that file's container, which is
 how you get back to a particular file without hunting for it: elk packs a real
 branch into tens of thousands of pixels each way, so the initial fit shows the
 shape of the graph rather than its text.
@@ -84,8 +83,8 @@ without moving anything: the card's own box keeps its collapsed size, so the
 canvas never jumps. Selecting a card also dims everything outside its
 neighbourhood — the card, whatever calls it, and whatever it calls — leaving
 just the conversation that card takes part in. Press Escape, click the same
-card again, or click the empty canvas to collapse and undim. Hovering a card
-previews the same dimming while nothing is selected.
+card again, or click a container or the empty canvas to collapse and undim.
+Hovering a card previews the same dimming while nothing is selected.
 
 Edges run caller → callee with an arrowhead at the callee's end; a dashed one
 is a call the resolver was not sure about. The graph pans and zooms, with a

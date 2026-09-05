@@ -173,20 +173,32 @@ describe("layout", () => {
     expect(placed[0]?.data).toEqual(nodes[0]?.data);
   });
 
-  it("sizes every card alike, however long its diff", async () => {
-    const { nodes, edges } = toFlow(scattered(30));
+  it("places the graph identically however long the diffs are", async () => {
+    // `scattered` gives its cards diffs of nine different lengths. Emptying
+    // them must change nothing: a collapsed card is `CARD_HEIGHT` tall
+    // whatever it holds, which is what lets expansion draw an overlay instead
+    // of asking for a second layout pass. Comparing two runs — rather than
+    // reading a height back off the result — is the only way to catch a
+    // regression here, because `layout` writes no height onto a card at all.
+    const long = scattered(30);
+    const empty: GraphSnapshot = {
+      ...long,
+      nodes: long.nodes.map((node) => ({ ...node, diff: [] })),
+    };
 
-    const placed = await layout(nodes, edges);
+    const longFlow = toFlow(long);
+    const emptyFlow = toFlow(empty);
+    const placedLong = await layout(longFlow.nodes, longFlow.edges);
+    const placedEmpty = await layout(emptyFlow.nodes, emptyFlow.edges);
 
-    // Nothing on a collapsed card grows with the diff, so nothing in the
-    // layout may either: expansion draws over the neighbours instead of
-    // asking for a second layout pass.
-    const heights = new Set(
-      rects(placed)
-        .filter((rect) => rect.id.includes("::"))
-        .map((rect) => rect.height),
-    );
-    expect([...heights]).toEqual([CARD_HEIGHT]);
+    expect(rects(placedEmpty)).toEqual(rects(placedLong));
+    // A card carries no box of its own out of layout either — the size elk
+    // was given is the constant, and writing one back is how content-derived
+    // sizing would creep in.
+    for (const card of cards(placedLong)) {
+      expect(card.height).toBeUndefined();
+      expect(card.width).toBeUndefined();
+    }
   });
 
   it("keeps every card inside its own container's box", async () => {

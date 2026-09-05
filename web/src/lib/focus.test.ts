@@ -156,6 +156,20 @@ describe("applyFocus", () => {
     expect(focused.edges).toEqual(edges);
   });
 
+  it("hands back the very same arrays when nothing is to be shown", () => {
+    // Identity, not equality: React Flow rebuilds its whole node lookup for
+    // every array it has not seen before, and a container is the biggest
+    // hover target on the canvas — pointing at one resolves to no focus at
+    // all, so it must cost nothing.
+    const { nodes, edges } = flow();
+
+    for (const id of [null, containerId("a.rs")]) {
+      const focused = applyFocus(nodes, edges, id, null);
+      expect(focused.nodes).toBe(nodes);
+      expect(focused.edges).toBe(edges);
+    }
+  });
+
   it("dims nothing when the focus is a container, which calls nothing", () => {
     const { nodes, edges } = flow();
 

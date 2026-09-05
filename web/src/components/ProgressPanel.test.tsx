@@ -1,8 +1,8 @@
 /**
  * @vitest-environment jsdom
  *
- * The lib tests run in node; only the two component tests need a DOM, so they
- * opt in here rather than the config switching the whole suite over.
+ * The lib tests run in node; only the component tests need a DOM, so each of
+ * them opts in here rather than the config switching the whole suite over.
  */
 
 import { cleanup, render, screen } from "@testing-library/react";
