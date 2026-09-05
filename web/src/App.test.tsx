@@ -107,10 +107,10 @@ function snapshot(): GraphSnapshot {
   });
   return {
     meta: {
+      repo: "/tmp/repo",
       base: "aaa",
       head: "bbb",
       files_changed: 2,
-      generated_at: "2026-09-05T00:00:00Z",
       warnings: [],
     },
     nodes: [
@@ -122,10 +122,10 @@ function snapshot(): GraphSnapshot {
       {
         from: "src/a.rs::caller",
         to: "src/a.rs::callee",
-        confidence: "resolved" as const,
+        confidence: "certain" as const,
       },
     ],
-  } as unknown as GraphSnapshot;
+  };
 }
 
 /** Render and wait for the snapshot fetch and the layout to settle. */

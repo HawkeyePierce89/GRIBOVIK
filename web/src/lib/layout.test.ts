@@ -257,6 +257,33 @@ describe("layout", () => {
   it("returns nothing for an empty graph", async () => {
     expect(await layout([], [])).toEqual([]);
   });
+
+  // `groupByContainer` drops a card that has no `parentId`, and elk fails the
+  // whole layout on an edge naming a node it was never given — so without the
+  // edge filter one malformed card would send every container down the grid
+  // fallback, which is exactly what dropping it is supposed to prevent.
+  it("still places the rest when a card has no container", async () => {
+    const { nodes, edges } = toFlow(chain());
+    // Omitted, not set to `undefined`: `parentId` is optional on React Flow's
+    // `Node`, and `exactOptionalPropertyTypes` makes those two different types
+    // for the same runtime value the guard reads.
+    const orphaned: GraphFlowNode[] = nodes.map((node) => {
+      if (node.id !== "a::callee") return node;
+      const { parentId: _parentId, ...rest } = node;
+      return rest;
+    });
+
+    const placed = await layout(orphaned, edges);
+
+    const caller = placed.find((node) => node.id === "a::caller")!;
+    const container = containers(placed).find(
+      (node) => node.id === containerId("a"),
+    )!;
+    expect(container.width).toBeGreaterThan(0);
+    // The grid fallback stacks a container's cards from the header down; elk
+    // having actually run is what puts the one remaining card level with it.
+    expect(caller.position.y).toBeLessThan(HEADER_HEIGHT + CARD_HEIGHT);
+  });
 });
 
 describe("gridLayout", () => {

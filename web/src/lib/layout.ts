@@ -98,8 +98,10 @@ function groupByContainer(
     // `toFlow` gives every card a `parentId`, but React Flow's type does not,
     // and a cast would hand elk a child under the group key `undefined` —
     // which elk rejects, taking the whole graph down the grid fallback for one
-    // malformed node. Dropping the card costs that card its position and
-    // nothing else.
+    // malformed node. Dropping the card confines the damage to that card,
+    // but only together with the edge filter in `layout`: an edge naming a
+    // node elk was never given is a dangling endpoint, and elk rejects that
+    // just as hard as the group key would have.
     const parent = node.parentId;
     if (parent === undefined) continue;
     const cards = groups.get(parent);
@@ -211,6 +213,10 @@ export async function layout(
   if (nodes.length === 0) return [];
 
   const groups = groupByContainer(nodes);
+  const placeable = new Set<string>();
+  for (const cards of groups.values()) {
+    for (const card of cards) placeable.add(card.id);
+  }
   const graph = {
     id: "root",
     layoutOptions: LAYOUT_OPTIONS,
@@ -223,11 +229,17 @@ export async function layout(
         height: CARD_HEIGHT,
       })),
     })),
-    edges: edges.map((edge) => ({
-      id: edge.id,
-      sources: [edge.source],
-      targets: [edge.target],
-    })),
+    // Only edges elk can resolve. A card `groupByContainer` dropped for having
+    // no `parentId` is not in the graph, so an edge still naming it would be a
+    // dangling endpoint — and elk fails the whole layout on one, which is the
+    // graph-wide grid fallback that dropping a single card exists to avoid.
+    edges: edges
+      .filter((edge) => placeable.has(edge.source) && placeable.has(edge.target))
+      .map((edge) => ({
+        id: edge.id,
+        sources: [edge.source],
+        targets: [edge.target],
+      })),
   };
 
   const limit = timeout(LAYOUT_TIMEOUT_MS);
