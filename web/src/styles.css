@@ -49,7 +49,16 @@ body {
 /* Progress panel ------------------------------------------------------- */
 
 .progress-panel {
+  display: flex;
   flex: 0 0 220px;
+  flex-direction: column;
+  /* Both minimums, and `min-width` is the load-bearing one: a flex item's
+     automatic minimum is its content, and the file rows are `nowrap` paths, so
+     without this the panel is sized by the longest path in the diff — twice
+     the 220px basis on a real branch, taken out of the canvas — and
+     `.file-row-path` never overflows, which makes its eliding dead code. */
+  min-width: 0;
+  min-height: 0;
   padding: 1rem;
   background: var(--panel);
   border-right: 1px solid var(--line);
@@ -64,6 +73,61 @@ body {
 .progress-total {
   margin: 0.25rem 0 1rem;
   color: var(--muted);
+}
+
+/* The index of the graph: one row per changed file, scrolling on its own so
+   the title and the total stay put on a branch with a hundred files. */
+
+.file-list {
+  margin: 0;
+  padding: 0;
+  overflow-y: auto;
+  flex: 1;
+  min-height: 0;
+  list-style: none;
+}
+
+.file-row {
+  display: flex;
+  align-items: baseline;
+  gap: 0.4rem;
+  width: 100%;
+  padding: 0.3rem 0.35rem;
+  border: 0;
+  border-radius: 5px;
+  background: none;
+  color: inherit;
+  cursor: pointer;
+  font: inherit;
+  text-align: left;
+}
+
+.file-row:hover,
+.file-row:focus-visible {
+  background: var(--card);
+}
+
+.file-row-path {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  /* A path is identified by its tail, so the front is what gives way. The RTL
+     paragraph is what moves the ellipsis to the start; the `<bdi>` around the
+     text is what keeps the path itself reading left to right, because a
+     leading neutral — the dot of `.github/workflows/…` — inherits the
+     paragraph's direction otherwise and is reordered to the far end. */
+  direction: rtl;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.78rem;
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.file-row-count {
+  flex: none;
+  color: var(--muted);
+  font-size: 0.72rem;
 }
 
 /* Canvas --------------------------------------------------------------- */
@@ -104,39 +168,163 @@ body {
   color: var(--muted);
 }
 
-/* Symbol card ---------------------------------------------------------- */
+/* File container ------------------------------------------------------- */
 
-.symbol-node {
-  display: flex;
-  flex-direction: column;
-  gap: 0.5rem;
-  width: 420px;
-  padding: 0.75rem;
-  background: var(--card);
+.file-node {
+  /* The layout wrote the box; the component only fills it. */
+  width: 100%;
+  height: 100%;
+  background: rgba(25, 28, 38, 0.55);
   border: 1px solid var(--line);
-  border-radius: 8px;
+  border-radius: 10px;
+  /* Not `hidden`: React Flow renders every node as a flat sibling, so nothing
+     here clips a card — but a container that scrolled or clipped its own
+     header on a narrow box would hide the file path the reviewer navigates
+     by, and the header is the only thing this box actually contains. */
+  overflow: visible;
 }
 
-.symbol-header {
+.file-header {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 0.5rem;
+  gap: 0.6rem;
+  height: 36px; /* HEADER_HEIGHT in layout.ts — elk reserves exactly this. */
+  padding: 0 0.75rem;
+  background: var(--panel);
+  border-bottom: 1px solid var(--line);
+  border-radius: 9px 9px 0 0;
 }
 
-.symbol-file {
+.file-path {
+  flex: 1;
+  min-width: 0;
   overflow: hidden;
-  color: var(--muted);
-  font-size: 0.8rem;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.85rem;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
+.file-count {
+  flex: none;
+  color: var(--muted);
+  font-size: 0.78rem;
+}
+
+.file-counts {
+  flex: none;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.78rem;
+  white-space: nowrap;
+}
+
+/* The same `+N −M`, sized in px rather than rem: this one sits in the card,
+   whose height is a constant elk laid out against. See `.symbol-node`. */
+.symbol-counts {
+  flex: none;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.count-added {
+  color: var(--added);
+}
+
+.count-removed {
+  color: var(--deleted);
+}
+
+/* Symbol card ---------------------------------------------------------- */
+
+.symbol-node {
+  /* The overlay an expanded card draws is positioned against this box. */
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  width: 420px;
+  /* CARD_HEIGHT in layout.ts. Fixed, and fixed here rather than left to the
+     content, because the layout was computed from the constant: a card that
+     grew by a line would overlap the one elk placed below it. */
+  height: 52px;
+  /* Everything inside this box is sized in px, not rem, for the same reason
+     the box is: `rem` resolves against the *root* font size, which the
+     reviewer's browser sets. At a 20px root the row's line box alone is 27px
+     inside a 20px content box, and the name spills past the card's border —
+     while `CARD_HEIGHT` cannot follow, being the number elk already laid the
+     graph out with. The card is the one place in the stylesheet that trades
+     text scaling for the fixed geometry the layout depends on. */
+  padding: 12px;
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.symbol-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+/* The row is the card's control (`role="button"` in SymbolNode), so keyboard
+   focus has to be visible. Drawn on the card's border rather than the row's
+   own box, which is inset by the card's padding and would read as an outline
+   around the text instead of around the card. */
+.symbol-row:focus-visible {
+  outline: none;
+}
+
+.symbol-node:has(.symbol-row:focus-visible) {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+
+.symbol-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  font-size: 14px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  /* A qualified name can be longer than the card; the card's width is what
+     the layout was computed from, so the name gives way, not the box. */
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.symbol-kind {
+  flex: none;
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.symbol-expanded {
+  /* Anchored under the collapsed row and drawn over whatever the layout put
+     below, so expanding a card re-flows nothing. `focus.ts` lifts the node's
+     z-index to match. */
+  position: absolute;
+  top: 100%;
+  left: 0;
+  width: 100%;
+  margin-top: 0.35rem;
+  padding: 0.5rem;
+  background: var(--card);
+  border: 1px solid var(--focus);
+  border-radius: 8px;
+  cursor: auto;
+  /* React Flow sets `user-select: none` on every node so a drag never paints
+     a text selection across the canvas. The diff is the one thing here a
+     reviewer copies out, and `nodrag` already keeps the drag off this box, so
+     the overlay takes the selection back. */
+  user-select: text;
+}
+
 .badge {
   flex: none;
-  padding: 0.1rem 0.45rem;
+  padding: 2px 7px;
   border-radius: 999px;
-  font-size: 0.7rem;
+  font-size: 11px;
   text-transform: uppercase;
   letter-spacing: 0.06em;
   color: var(--bg);
@@ -157,22 +345,6 @@ body {
 
 .badge-file {
   background: var(--file);
-}
-
-.symbol-name {
-  display: flex;
-  align-items: baseline;
-  gap: 0.5rem;
-  margin: 0;
-  font-size: 1rem;
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-  word-break: break-all;
-}
-
-.symbol-kind {
-  color: var(--muted);
-  font-size: 0.72rem;
-  font-family: inherit;
 }
 
 /* Diff ----------------------------------------------------------------- */
@@ -237,4 +409,19 @@ body {
 
 .react-flow__node {
   cursor: default;
+}
+
+/* Focus and dimming ----------------------------------------------------- */
+
+/* `focus.ts` sets these two classes and nothing else does. Containers never
+   get `dimmed`: they are the map the reviewer navigates by. */
+
+.react-flow__node.dimmed,
+.react-flow__edge.dimmed {
+  opacity: 0.18;
+}
+
+.react-flow__edge.focused .react-flow__edge-path {
+  stroke: var(--focus);
+  stroke-width: 2;
 }

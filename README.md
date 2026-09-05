@@ -66,13 +66,44 @@ altogether and named in the same banner.
 
 ## In the browser
 
-The left panel names the review and counts the cards — changed symbols plus
-the file-level catch-alls.
+The left panel counts the cards — changed symbols plus the file-level
+catch-alls — and lists every file the graph holds a card for, with its card
+count and `+N −M`. A file with an unsupported extension is not analysed and so
+is not in the panel either, and neither is one the analysis produced no card
+for at all. The counts are totals over that file's cards rather than `git diff
+--stat`'s, which run a few lines higher — a blank line gained between two
+symbols is the one change GRIBOVIK deliberately does not card, and a file whose
+*only* change is that blank line drops out of the panel with it.
 
-Each card carries its file path, a change badge, and its slice of the diff.
-The graph pans and zooms, with a minimap and controls in the corners; a dashed
-edge is one the call resolver was not sure about. Warnings from the analysis
-sit in a banner at the top.
+Clicking a file zooms the canvas to that file's container, which is how you get
+back to a particular file without hunting for it: elk packs a real branch into
+tens of thousands of pixels each way, so the initial fit shows the shape of the
+graph rather than its text.
+
+The graph itself is grouped by file. Each file is a **container** box headed
+with its path, how many cards it holds, and its `+N −M`; the cards inside it
+are the symbols that changed. A card is collapsed by default — name, kind, a
+change badge, and its own `+N −M` on one line — so that a screenful of graph
+stays readable.
+
+**Click a card to expand it.** Its diff opens in a panel over the cards below,
+without moving anything: the card's own box keeps its collapsed size, so the
+canvas never jumps. Selecting a card also dims everything outside its
+neighbourhood — the card, whatever calls it, and whatever it calls — leaving
+just the conversation that card takes part in. Press Escape, click the same
+card again, or click a container or the empty canvas to collapse and undim.
+Hovering a card previews the same dimming while nothing is selected. Cards are
+reachable from the keyboard too: Tab moves between them and Enter or Space
+opens the one you land on. While nothing is open only the cards in the
+viewport are drawn, so Tab reaches those alone and the way to a distant one is
+the file panel first; opening a card draws the whole graph — the diff panel
+falls outside the card's own box, so the cards around it cannot be dropped —
+and Tab then walks every card in the range.
+
+Edges run caller → callee with an arrowhead at the callee's end; a dashed one
+is a call the resolver was not sure about. The graph pans and zooms, with a
+minimap and controls in the corners. Warnings from the analysis sit in a
+banner at the top.
 
 ## Install from a release
 

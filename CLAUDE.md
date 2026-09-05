@@ -41,11 +41,14 @@ web/
   vite.config.export.ts  # inline-everything build config
   src/
     main.tsx               # React entry point (StrictMode)
-    App.tsx                # fetches the graph, lays out once, renders the canvas
+    App.tsx + App.test.tsx # fetches, lays out once, owns the interaction model
     styles.css
     types/snapshot.ts      # the other half of the wire contract
-    lib/{transform,layout,elk,snapshot}.ts + *.test.ts
-    components/{SymbolNode,DiffView,ProgressPanel}.tsx
+    lib/{transform,layout,snapshot,focus}.ts + *.test.ts
+    lib/elk.ts             # the elk worker handle; exercised through layout.ts
+    lib/stylesheet.test.ts # layout constants and focus classes vs styles.css
+    components/{SymbolNode,FileNode,ProgressPanel}.tsx + *.test.tsx
+    components/DiffView.tsx  # covered through SymbolNode's tests
 ```
 
 Unit tests live in `#[cfg(test)] mod tests` next to the code they cover;
@@ -253,6 +256,116 @@ OS-assigned port the proxy cannot find:
 ```sh
 cargo run -- --port 7777 --assets web/dist   # then npm run dev in web/
 ```
+
+Component tests run in jsdom, the rest in node. `vite.config.ts` sets
+`environment: "node"` for the whole suite — the `lib/` tests are pure and a DOM
+would only cost startup — and each `*.test.tsx` opts itself in with a
+`/** @vitest-environment jsdom */` docblock on the first line. That is what
+`jsdom`, `@testing-library/react` and `@testing-library/dom` are dev
+dependencies for. A component rendering a React Flow `Handle` — `SymbolNode`
+does, `FileNode` deliberately does not — has to be wrapped in
+`<ReactFlowProvider>` in the test, since the handle reads the instance store
+and throws without one. `App.test.tsx` mounts the whole canvas and needs more
+than that: React Flow measures through `ResizeObserver`, `DOMMatrixReadOnly`,
+`offsetWidth`/`offsetHeight` and `SVGElement.getBBox`, none of which jsdom
+implements, so the file stubs all five at the top. Nothing there may assert on a measurement — a test
+of `onlyRenderVisibleElements` would be asserting against the stub — which is
+why culling is the one canvas decision left to the manual pass.
+`@types/node` is a dev dependency for `lib/stylesheet.test.ts` alone: it reads
+`styles.css` with `node:fs` rather than importing it, because Vitest stubs
+every CSS import to an empty string — `?raw` included — and an import-based
+comparison would silently assert against nothing.
+
+The canvas adds a second id space on top of the snapshot's: a container is
+`file:<path>` with every `%` and then every `:` in the path percent-escaped
+(`%` first, or the escape itself would not be injective), a card keeps
+`<file>::<qualified_name>`. A card id always carries a `::` and an escaped
+container id never can, which is what keeps the two apart — the prefix alone
+would not, since a path may itself contain a colon and `file:` + `a.ts::b.tsx`
+is exactly the card id of `b.tsx` in a file named `file:a.ts`. `toFlow` emits
+each container immediately before its own cards — React Flow resolves
+`parentId` against the nodes it has already seen, so a child ahead of its
+parent in the array is an error rather than a misplacement.
+
+The elk graph is two levels deep — root holds the containers, a container holds
+its cards — while **every edge stays at the root**, because an edge between two
+files belongs to no container. That is what makes
+`elk.hierarchyHandling: "INCLUDE_CHILDREN"` mandatory rather than a tuning
+knob: without it elk treats a container as opaque, refuses to route through
+one, and cross-file calls stop influencing where the files land. Hierarchy is
+not free — 0.56 s against 0.41 s flat on the 572-card MVP snapshot — and
+`elk.layered.thoroughness: "1"` (0.43 s) is the measured lever if a much larger
+range ever makes the wait visible.
+
+Selection on the canvas is GRIBOVIK's, not React Flow's. Every node is emitted
+`selectable: false` and `App` tracks the open card in its own state, because
+`elevateNodesOnSelect` adds 1000 to a selected node's z — which on a container
+paints its panel over every edge crossing it, and on a card reaches its edges
+too, since `getElevatedEdgeZIndex` takes the higher z of two endpoints whenever
+either has a `parentId`. `App` clears its own selection on four paths and none
+of them touch React Flow's, so a node left selected there keeps its arrows over
+the graph until something else is clicked. Containers are additionally
+`draggable: false`: React Flow marks every draggable node `nopan`, and a
+container is mostly empty background — the surface a reviewer grabs to pan.
+`onNodeClick` fires without either flag, which is what keeps click-to-dismiss
+working. `nodesFocusable` is off for the same reason the flags are set: React
+Flow's Enter/Space handler is gated on `isSelectable`, so leaving it on made
+every node a tab stop announced as activatable and wired to nothing. The
+keyboard path a card does have is its own — `SymbolNode` makes `.symbol-row` a
+`role="button"` whose Enter/Space `click()`s itself, so the key reaches
+`onNodeClick` by the same route a pointer does. Edges carry `selectable:
+false` and `edgesFocusable` is off for the same two reasons plus a third: only
+a pane click clears React Flow's *edge* selection — a card or container click
+cannot, being gated on the node's `isSelectable` — so a clicked edge would
+outlive three of the four dismissal gestures. Unselectable and with no
+`onEdgeClick`, React Flow adds its `inactive` class, whose rule is
+`pointer-events: none`, and that is what keeps an edge's 20px invisible hit
+band from swallowing the pan and the click-to-dismiss on the container
+background it is routed across.
+
+A card is named by its symbol, but the synthetic file-level node's `name` *is*
+the file path, which the container header above it now carries — so
+`SymbolNode` shows that one card's basename instead of printing the path twice
+through a tail-eating ellipsis. `title` keeps the whole path.
+
+`focus.ts` derives the appearance rather than storing it: `applyFocus` runs
+over the current arrays on every render, so `useNodesState` keeps whatever a
+drag wrote and elk never runs a second time. Its neighbourhood is one hop, not
+the transitive closure — two hops out from a well-connected card is most of the
+graph — containers are exempt from dimming because they are the map, and with
+nothing focused it returns its input arrays *by identity*, which is what stops
+a hover over a container from handing React Flow a content-identical array and
+forcing a full node-lookup rebuild.
+
+Two decisions in the canvas are load-bearing enough that changing them by
+accident breaks something a test will not catch. **The layout sizes every card
+by its collapsed height** (`CARD_HEIGHT` in `layout.ts`, and `HEADER_HEIGHT`
+for the container header elk reserves as top padding — both are the
+stylesheet's numbers copied by hand, and `lib/stylesheet.test.ts` is the only
+thing comparing the two halves), and expanding a card must never re-run it:
+`SymbolNode` draws the diff in an absolutely positioned `.symbol-expanded`
+overlay, so the node's own box keeps the size elk gave it and the canvas cannot
+shift under the reviewer mid-click. Anything that makes a card's box grow with
+its content brings back the re-layout — and with it a graph that jumps every
+time you open a diff.
+**Edge paths are React Flow's `smoothstep`**, not the `sections` elk computes.
+elk's bendpoints are derived for its own port model and stop lining up with
+React Flow's left/right handle centres the moment a node is dragged, so
+consuming them would mean a custom edge component that is wrong exactly when it
+matters; `smoothstep` gives the same orthogonal look, costs nothing per edge,
+and stays correct when a node moves.
+
+The overlay costs the canvas two things that are easy to reintroduce. React
+Flow culls by a node's *measured* box, so `onlyRenderVisibleElements` has to
+stand down while a card is expanded or panning the collapsed row off-screen
+blanks the diff still filling the viewport — which means opening a card mounts
+the *whole* graph, 632 nodes and 934 edges and ~114 ms on the 572-card MVP
+snapshot, and unmounts it again on collapse. That is the cost to watch if a
+larger range makes the click feel slow, and the way out of it is a viewport
+portal that draws the overlay outside the culled node. And React Flow hangs `onNodeClick`
+off the wrapper the overlay renders inside, where `nodrag`/`nowheel` opt out of
+the drag and the wheel but not the click — so `.symbol-expanded` stops click
+propagation itself, or selecting a line of the diff closes the card.
 
 ## The two workflows
 
