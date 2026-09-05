@@ -160,13 +160,13 @@ This is a CI-only change: YAML and Markdown, no Rust or TypeScript.
 
 ### Task 4: Verify acceptance criteria
 
-- [ ] `actionlint .github/workflows/*.yml` — a workflow changed, so this gate
+- [x] `actionlint .github/workflows/*.yml` — a workflow changed, so this gate
       applies.
-- [ ] `cargo test`
-- [ ] `cargo clippy --all-targets -- -D warnings`
-- [ ] `cargo fmt --check`
-- [ ] `cd web && npm test && npm run typecheck`
-- [ ] `git diff --stat` — confirm the change touches only
+- [x] `cargo test`
+- [x] `cargo clippy --all-targets -- -D warnings`
+- [x] `cargo fmt --check`
+- [x] `cd web && npm test && npm run typecheck`
+- [x] `git diff --stat` — confirm the change touches only
       `.github/workflows/pr-graph.yml` and `CLAUDE.md`; no Rust or TypeScript
       file may appear.
 
