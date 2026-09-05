@@ -47,6 +47,28 @@ describe("layout constants against styles.css", () => {
   });
 });
 
+describe("the card's internals against its fixed box", () => {
+  // `CARD_HEIGHT` is a constant elk laid the graph out with, so the card's box
+  // cannot grow to fit its contents — and `rem` resolves against the *root*
+  // font size, which the reviewer's browser sets, not the `14px` on `body`.
+  // A single `rem` inside the card is enough to push the row past the border
+  // at a 20px root, and neither the layout tests nor the component tests load
+  // CSS, so nothing else would notice.
+  for (const [selector, property] of [
+    [".symbol-node", "padding"],
+    [".symbol-row", "gap"],
+    [".symbol-name", "font-size"],
+    [".symbol-kind", "font-size"],
+    [".symbol-counts", "font-size"],
+    [".badge", "font-size"],
+    [".badge", "padding"],
+  ] as const) {
+    it(`\`${selector}\` sizes \`${property}\` in px, not rem`, () => {
+      expect(declaration(selector, property)).not.toMatch(/rem\b/);
+    });
+  }
+});
+
 describe("focus classes against styles.css", () => {
   // `focus.ts` puts these two strings on nodes and edges and the stylesheet is
   // the only thing that acts on them. Renaming either half alone leaves every

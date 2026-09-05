@@ -93,10 +93,12 @@ neighbourhood — the card, whatever calls it, and whatever it calls — leaving
 just the conversation that card takes part in. Press Escape, click the same
 card again, or click a container or the empty canvas to collapse and undim.
 Hovering a card previews the same dimming while nothing is selected. Cards are
-reachable from the keyboard too: Tab moves between the ones on screen, and
-Enter or Space opens the one you land on. Only those — cards outside the
-viewport are not drawn at all, so the way to a distant one is the file panel
-first.
+reachable from the keyboard too: Tab moves between them and Enter or Space
+opens the one you land on. While nothing is open only the cards in the
+viewport are drawn, so Tab reaches those alone and the way to a distant one is
+the file panel first; opening a card draws the whole graph — the diff panel
+falls outside the card's own box, so the cards around it cannot be dropped —
+and Tab then walks every card in the range.
 
 Edges run caller → callee with an arrowhead at the callee's end; a dashed one
 is a call the resolver was not sure about. The graph pans and zooms, with a

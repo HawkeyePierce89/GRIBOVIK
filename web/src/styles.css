@@ -211,11 +211,19 @@ body {
   font-size: 0.78rem;
 }
 
-.file-counts,
-.symbol-counts {
+.file-counts {
   flex: none;
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   font-size: 0.78rem;
+  white-space: nowrap;
+}
+
+/* The same `+N −M`, sized in px rather than rem: this one sits in the card,
+   whose height is a constant elk laid out against. See `.symbol-node`. */
+.symbol-counts {
+  flex: none;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px;
   white-space: nowrap;
 }
 
@@ -239,7 +247,14 @@ body {
      content, because the layout was computed from the constant: a card that
      grew by a line would overlap the one elk placed below it. */
   height: 52px;
-  padding: 0.75rem;
+  /* Everything inside this box is sized in px, not rem, for the same reason
+     the box is: `rem` resolves against the *root* font size, which the
+     reviewer's browser sets. At a 20px root the row's line box alone is 27px
+     inside a 20px content box, and the name spills past the card's border —
+     while `CARD_HEIGHT` cannot follow, being the number elk already laid the
+     graph out with. The card is the one place in the stylesheet that trades
+     text scaling for the fixed geometry the layout depends on. */
+  padding: 12px;
   background: var(--card);
   border: 1px solid var(--line);
   border-radius: 8px;
@@ -249,7 +264,7 @@ body {
 .symbol-row {
   display: flex;
   align-items: center;
-  gap: 0.5rem;
+  gap: 8px;
   min-width: 0;
 }
 
@@ -270,7 +285,7 @@ body {
   flex: 1;
   min-width: 0;
   overflow: hidden;
-  font-size: 0.9rem;
+  font-size: 14px;
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   /* A qualified name can be longer than the card; the card's width is what
      the layout was computed from, so the name gives way, not the box. */
@@ -281,7 +296,7 @@ body {
 .symbol-kind {
   flex: none;
   color: var(--muted);
-  font-size: 0.72rem;
+  font-size: 11px;
 }
 
 .symbol-expanded {
@@ -307,9 +322,9 @@ body {
 
 .badge {
   flex: none;
-  padding: 0.1rem 0.45rem;
+  padding: 2px 7px;
   border-radius: 999px;
-  font-size: 0.7rem;
+  font-size: 11px;
   text-transform: uppercase;
   letter-spacing: 0.06em;
   color: var(--bg);
