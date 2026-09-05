@@ -172,10 +172,10 @@ This is a CI-only change: YAML and Markdown, no Rust or TypeScript.
 
 ### Task 5: Update documentation
 
-- [ ] `README.md`: no change expected (its PR-artifact paragraph does not
+- [x] `README.md`: no change expected (its PR-artifact paragraph does not
       mention the release binary). If Task 3's re-check found otherwise, correct
       just that sentence.
-- [ ] `CLAUDE.md`: already updated in Task 3; confirm the diff of that file
+- [x] `CLAUDE.md`: already updated in Task 3; confirm the diff of that file
       contains the rewritten description and the deleted release-currency
       paragraph, and nothing else.
 
