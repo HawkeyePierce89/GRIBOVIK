@@ -59,21 +59,91 @@ pub fn line_diff(old: &str, new: &str) -> Vec<DiffLine> {
     let diff = TextDiff::configure()
         .newline_terminated(true)
         .diff_slices(&old_lines, &new_lines);
-    diff.iter_all_changes()
-        .map(|change| {
-            let tag = match change.tag() {
-                ChangeTag::Equal => DiffTag::Context,
-                ChangeTag::Delete => DiffTag::Del,
-                ChangeTag::Insert => DiffTag::Add,
-            };
-            DiffLine {
-                tag,
-                old_line: change.old_index().map(|i| i as u32 + 1),
-                new_line: change.new_index().map(|i| i as u32 + 1),
-                text: strip_eol(change.value()).to_string(),
+
+    // `similar` hands back an edit script; git's compaction works on the pair
+    // of changed-flag arrays behind it, so rebuild them.
+    let mut changed_old = vec![false; old_lines.len()];
+    let mut changed_new = vec![false; new_lines.len()];
+    for change in diff.iter_all_changes() {
+        match change.tag() {
+            ChangeTag::Delete => {
+                if let Some(i) = change.old_index() {
+                    changed_old[i] = true;
+                }
             }
-        })
-        .collect()
+            ChangeTag::Insert => {
+                if let Some(j) = change.new_index() {
+                    changed_new[j] = true;
+                }
+            }
+            ChangeTag::Equal => {}
+        }
+    }
+
+    // Exactly git's order (`xdl_do_diff`): the old side against the new, then
+    // the new side against the old *as already compacted*.
+    compact(&old_lines, &mut changed_old, &changed_new);
+    compact(&new_lines, &mut changed_new, &changed_old);
+
+    emit(&old_lines, &new_lines, &changed_old, &changed_new)
+}
+
+/// Turn the two changed-flag arrays back into the flat list.
+///
+/// At every position the maximal run of changed old lines is emitted first,
+/// then the maximal run of changed new lines, then the one unchanged line that
+/// carries both numbers — which keeps a replacement's deletions ahead of its
+/// insertions, the order `similar` produced and every caller reads.
+fn emit(
+    old_lines: &[&str],
+    new_lines: &[&str],
+    changed_old: &[bool],
+    changed_new: &[bool],
+) -> Vec<DiffLine> {
+    let mut out = Vec::with_capacity(old_lines.len() + new_lines.len());
+    let (mut i, mut j) = (0usize, 0usize);
+
+    loop {
+        while i < old_lines.len() && changed_old[i] {
+            out.push(DiffLine {
+                tag: DiffTag::Del,
+                old_line: Some(i as u32 + 1),
+                new_line: None,
+                text: strip_eol(old_lines[i]).to_string(),
+            });
+            i += 1;
+        }
+        while j < new_lines.len() && changed_new[j] {
+            out.push(DiffLine {
+                tag: DiffTag::Add,
+                old_line: None,
+                new_line: Some(j as u32 + 1),
+                text: strip_eol(new_lines[j]).to_string(),
+            });
+            j += 1;
+        }
+        if i == old_lines.len() || j == new_lines.len() {
+            // Both sides hold the same number of unchanged lines, so they run
+            // out together; anything else means the flags disagree.
+            debug_assert!(
+                i == old_lines.len() && j == new_lines.len(),
+                "unchanged lines out of step: old {i}/{}, new {j}/{}",
+                old_lines.len(),
+                new_lines.len()
+            );
+            break;
+        }
+        out.push(DiffLine {
+            tag: DiffTag::Context,
+            old_line: Some(i as u32 + 1),
+            new_line: Some(j as u32 + 1),
+            text: strip_eol(old_lines[i]).to_string(),
+        });
+        i += 1;
+        j += 1;
+    }
+
+    out
 }
 
 /// One symbol's claim on a side: its span, minus the spans nested inside it.
@@ -152,9 +222,6 @@ pub fn slice_diff(
 // git's, not ours. They must not be tuned locally: the point of the port is
 // that a slidable block lands where `git diff` (and therefore GitHub) puts it,
 // and any local adjustment silently breaks that agreement.
-//
-// The `#[allow(dead_code)]`s below are the scaffolding of the compaction pass
-// that consumes these; they go away once `line_diff` calls it.
 // ---------------------------------------------------------------------------
 
 /// If a line is indented more than this, `get_indent` just returns this value.
@@ -187,8 +254,7 @@ const RELATIVE_DEDENT_WITH_BLANK_PENALTY: i32 = 17;
 /// the shallower split.
 const INDENT_WEIGHT: i32 = 60;
 /// How far a group is slid at most.
-#[allow(dead_code)]
-const INDENT_HEURISTIC_MAX_SLIDING: usize = 100;
+const INDENT_HEURISTIC_MAX_SLIDING: isize = 100;
 
 /// Whether `b` is whitespace in the C sense (`XDL_ISSPACE`).
 fn is_space(b: u8) -> bool {
@@ -248,7 +314,6 @@ struct SplitScore {
 }
 
 /// Measure a hypothetical split of `lines` above index `split`.
-#[allow(dead_code)]
 fn measure_split(lines: &[&str], split: usize) -> SplitMeasurement {
     let mut m = SplitMeasurement {
         end_of_file: split >= lines.len(),
@@ -292,7 +357,6 @@ fn measure_split(lines: &[&str], split: usize) -> SplitMeasurement {
 
 /// Accumulate the badness of the split described by `m` into `s`, as the C
 /// does — a group's score is the sum over its two ends.
-#[allow(dead_code)]
 fn score_add_split(m: &SplitMeasurement, s: &mut SplitScore) {
     if m.pre_indent == -1 && m.pre_blank == 0 {
         s.penalty += START_OF_FILE_PENALTY;
@@ -354,12 +418,269 @@ fn score_add_split(m: &SplitMeasurement, s: &mut SplitScore) {
 /// Only the *sign* of the effective-indent difference is used, weighted by
 /// [`INDENT_WEIGHT`], so a shallower split wins over any accumulation of
 /// penalties short of that weight.
-#[allow(dead_code)]
 fn score_cmp(s1: &SplitScore, s2: &SplitScore) -> i32 {
     let cmp_indents = i32::from(s1.effective_indent > s2.effective_indent)
         - i32::from(s1.effective_indent < s2.effective_indent);
 
     INDENT_WEIGHT * cmp_indents + (s1.penalty - s2.penalty)
+}
+
+// ---------------------------------------------------------------------------
+// Change compaction: a port of git's `xdl_change_compact`.
+//
+// `similar` runs its own git-like compaction and leaves every slidable group
+// in its fully-slid-down position — git's `--no-indent-heuristic` state. What
+// follows is the rest of git's `xdiff/xdiffi.c`: the group cursor
+// (`struct xdlgroup`, `group_init`, `group_next`, `group_previous`,
+// `group_slide_up`, `group_slide_down`) and `xdl_change_compact` itself, run
+// with `XDF_INDENT_HEURISTIC` unconditionally set, so a slid block lands where
+// `git diff` puts it.
+//
+// Where the C calls `XDL_BUG` on a broken group-sync invariant, the port
+// `debug_assert!`s and, in release, stops compacting and leaves the diff in
+// its last consistent state: sliding is a semantics-preserving rewrite, so a
+// half-compacted pair of flag arrays is still a correct diff, and degradation
+// beats a panic in the analysis path.
+// ---------------------------------------------------------------------------
+
+/// A run of changed lines, `start..end`, plus the cursor moves over it.
+///
+/// `start` is the index of the first changed line, `end` the index of the
+/// first unchanged line after the group; an empty group has `start == end` and
+/// sits above the unchanged line at that index. The C indexes an `rchg` array
+/// padded with a zero at `-1` and at `n`, which is why it needs no bounds
+/// checks; here the bounds are checked instead.
+#[derive(Debug, Clone, Copy)]
+struct Group {
+    start: usize,
+    end: usize,
+}
+
+impl Group {
+    /// The first (possibly empty) group of `changed`.
+    fn init(changed: &[bool]) -> Self {
+        let mut end = 0;
+        while end < changed.len() && changed[end] {
+            end += 1;
+        }
+        Self { start: 0, end }
+    }
+
+    fn is_empty(&self) -> bool {
+        self.start == self.end
+    }
+
+    /// Move to the next (possibly empty) group. `false` at the end of file.
+    fn next(&mut self, changed: &[bool]) -> bool {
+        if self.end == changed.len() {
+            return false;
+        }
+        self.start = self.end + 1;
+        self.end = self.start;
+        while self.end < changed.len() && changed[self.end] {
+            self.end += 1;
+        }
+        true
+    }
+
+    /// Move to the previous (possibly empty) group. `false` at the start.
+    fn previous(&mut self, changed: &[bool]) -> bool {
+        if self.start == 0 {
+            return false;
+        }
+        self.end = self.start - 1;
+        self.start = self.end;
+        while self.start > 0 && changed[self.start - 1] {
+            self.start -= 1;
+        }
+        true
+    }
+
+    /// Slide toward the end of the file, absorbing any group bumped into.
+    ///
+    /// Possible exactly when the first line of the group repeats the line just
+    /// below it — the same equality `similar` diffed on, terminator included.
+    fn slide_down(&mut self, lines: &[&str], changed: &mut [bool]) -> bool {
+        if self.end < lines.len() && lines[self.start] == lines[self.end] {
+            changed[self.start] = false;
+            self.start += 1;
+            changed[self.end] = true;
+            self.end += 1;
+            while self.end < changed.len() && changed[self.end] {
+                self.end += 1;
+            }
+            true
+        } else {
+            false
+        }
+    }
+
+    /// Slide toward the start of the file, absorbing any group bumped into.
+    fn slide_up(&mut self, lines: &[&str], changed: &mut [bool]) -> bool {
+        if self.start > 0 && self.end > 0 && lines[self.start - 1] == lines[self.end - 1] {
+            self.start -= 1;
+            changed[self.start] = true;
+            self.end -= 1;
+            changed[self.end] = false;
+            while self.start > 0 && changed[self.start - 1] {
+                self.start -= 1;
+            }
+            true
+        } else {
+            false
+        }
+    }
+}
+
+/// Shift every change group of one side into its most intuitive position.
+///
+/// `changed` is the side being compacted, `other_changed` the same file's
+/// counterpart: the two are walked in lockstep, group *k* of one always facing
+/// group *k* of the other, because both sides hold the same unchanged lines in
+/// the same order.
+fn compact(lines: &[&str], changed: &mut [bool], other_changed: &[bool]) {
+    debug_assert_eq!(lines.len(), changed.len());
+
+    let mut g = Group::init(changed);
+    let mut go = Group::init(other_changed);
+
+    loop {
+        // An empty group in the side being compacted has nothing to slide.
+        if !g.is_empty() {
+            let mut groupsize;
+            let mut earliest_end;
+            let mut end_matching_other;
+
+            // Shift up and then down as far as possible, merging whatever is
+            // bumped into, until the group stops growing.
+            loop {
+                groupsize = g.end - g.start;
+
+                // The last `end` at which this group lines up with a group of
+                // changed lines in the other file, if any.
+                end_matching_other = None;
+
+                while g.slide_up(lines, changed) {
+                    let synced = go.previous(other_changed);
+                    debug_assert!(synced, "group sync broken sliding up");
+                    if !synced {
+                        return;
+                    }
+                }
+
+                // The highest this group can be shifted.
+                earliest_end = g.end;
+
+                if !go.is_empty() {
+                    end_matching_other = Some(g.end);
+                }
+
+                while g.slide_down(lines, changed) {
+                    let synced = go.next(other_changed);
+                    debug_assert!(synced, "group sync broken sliding down");
+                    if !synced {
+                        return;
+                    }
+                    if !go.is_empty() {
+                        end_matching_other = Some(g.end);
+                    }
+                }
+
+                if groupsize == g.end - g.start {
+                    break;
+                }
+            }
+
+            // The group now sits as far down as it can, so every remaining
+            // choice is an upwards shift.
+            if g.end == earliest_end {
+                // It could not be shifted at all.
+            } else if end_matching_other.is_some() {
+                // Line the group up with the last group of changes on the
+                // other side that it can align with.
+                while go.is_empty() {
+                    let slid = g.slide_up(lines, changed);
+                    debug_assert!(slid, "match disappeared");
+                    if !slid {
+                        return;
+                    }
+                    let synced = go.previous(other_changed);
+                    debug_assert!(synced, "group sync broken sliding to match");
+                    if !synced {
+                        return;
+                    }
+                }
+            } else {
+                let best_shift = best_indent_shift(lines, g.end, groupsize, earliest_end);
+                while g.end > best_shift {
+                    let slid = g.slide_up(lines, changed);
+                    debug_assert!(slid, "best shift unreached");
+                    if !slid {
+                        return;
+                    }
+                    let synced = go.previous(other_changed);
+                    debug_assert!(synced, "group sync broken sliding to blank line");
+                    if !synced {
+                        return;
+                    }
+                }
+            }
+        }
+
+        // Move past the just-processed group.
+        if !g.next(changed) {
+            break;
+        }
+        let synced = go.next(other_changed);
+        debug_assert!(synced, "group sync broken moving to next group");
+        if !synced {
+            return;
+        }
+    }
+
+    debug_assert!(!go.next(other_changed), "group sync broken at end of file");
+}
+
+/// The `end` index this group should be slid to, per the indent heuristic.
+///
+/// A group of pure additions or deletions implies two splits — one above it
+/// and one below — and each candidate position scores the sum of the two. The
+/// lowest score wins, and `score_cmp`'s `<= 0` tie-break keeps the *latest*
+/// best position, as the C does.
+fn best_indent_shift(
+    lines: &[&str],
+    group_end: usize,
+    groupsize: usize,
+    earliest_end: usize,
+) -> usize {
+    let group_end = group_end as isize;
+    let groupsize = groupsize as isize;
+
+    let mut shift = earliest_end as isize;
+    shift = shift.max(group_end - groupsize - 1);
+    shift = shift.max(group_end - INDENT_HEURISTIC_MAX_SLIDING);
+
+    let mut best_shift: Option<usize> = None;
+    let mut best_score = SplitScore::default();
+
+    while shift <= group_end {
+        let mut score = SplitScore::default();
+        score_add_split(&measure_split(lines, shift as usize), &mut score);
+        // `shift` never drops below `groupsize`: `earliest_end` is the group's
+        // `end` with its `start` at 0 or above, so the clamp above cannot take
+        // it negative. `max(0)` only spares the cast an assumption.
+        score_add_split(
+            &measure_split(lines, (shift - groupsize).max(0) as usize),
+            &mut score,
+        );
+        if best_shift.is_none() || score_cmp(&score, &best_score) <= 0 {
+            best_score = score;
+            best_shift = Some(shift as usize);
+        }
+        shift += 1;
+    }
+
+    best_shift.unwrap_or(group_end as usize)
 }
 
 /// Drop one trailing line terminator, leaving any other whitespace alone.
@@ -555,6 +876,102 @@ mod tests {
         assert!(range.contains(4));
         assert!(range.contains(6));
         assert!(!range.contains(7));
+    }
+
+    /// The case the whole port exists for. `similar` leaves the inserted block
+    /// fully slid down, which puts the new function's `#[test]` on the line
+    /// *above* the block and hands the pre-existing `fn b` a stray attribute.
+    /// Git's heuristic slides it back so the block is the whole function.
+    ///
+    /// Cross-checked against
+    /// `git diff --no-index --indent-heuristic` on the same two texts.
+    #[test]
+    fn an_inserted_function_takes_its_own_attribute_line() {
+        let old = "#[test]\nfn a() {}\n\n#[test]\nfn b() {}\n";
+        let new = "#[test]\nfn a() {}\n\n#[test]\nfn new() {}\n\n#[test]\nfn b() {}\n";
+        assert_eq!(
+            render(&line_diff(old, new)),
+            vec![
+                ("context", Some(1), Some(1), "#[test]"),
+                ("context", Some(2), Some(2), "fn a() {}"),
+                ("context", Some(3), Some(3), ""),
+                ("add", None, Some(4), "#[test]"),
+                ("add", None, Some(5), "fn new() {}"),
+                ("add", None, Some(6), ""),
+                ("context", Some(4), Some(7), "#[test]"),
+                ("context", Some(5), Some(8), "fn b() {}"),
+            ]
+        );
+    }
+
+    #[test]
+    fn a_group_that_cannot_slide_is_left_where_it_is() {
+        // "Q" repeats neither neighbour, so the insertion has one position.
+        assert_eq!(
+            render(&line_diff("a\nb\nc\n", "a\nQ\nb\nc\n")),
+            vec![
+                ("context", Some(1), Some(1), "a"),
+                ("add", None, Some(2), "Q"),
+                ("context", Some(2), Some(3), "b"),
+                ("context", Some(3), Some(4), "c"),
+            ]
+        );
+    }
+
+    /// The slide range runs into the start of the file, and the shallower
+    /// split wins there: the addition takes line 1, not line 2.
+    #[test]
+    fn a_slide_bounded_by_the_start_of_file_can_still_shift_up() {
+        assert_eq!(
+            render(&line_diff("x\n    y\n", "x\nx\n    y\n")),
+            vec![
+                ("add", None, Some(1), "x"),
+                ("context", Some(1), Some(2), "x"),
+                ("context", Some(2), Some(3), "    y"),
+            ]
+        );
+    }
+
+    /// A function appended after one that ends in the same `}`: the block can
+    /// slide up over that brace, and the end of the file wins.
+    #[test]
+    fn a_slide_bounded_by_the_end_of_file_stays_at_the_end() {
+        let old = "fn a() {\n    one();\n}\n";
+        let new = "fn a() {\n    one();\n}\n\nfn b() {\n    two();\n}\n";
+        assert_eq!(
+            render(&line_diff(old, new)),
+            vec![
+                ("context", Some(1), Some(1), "fn a() {"),
+                ("context", Some(2), Some(2), "    one();"),
+                ("context", Some(3), Some(3), "}"),
+                ("add", None, Some(4), ""),
+                ("add", None, Some(5), "fn b() {"),
+                ("add", None, Some(6), "    two();"),
+                ("add", None, Some(7), "}"),
+            ]
+        );
+    }
+
+    /// When a slidable insertion can be positioned against a deletion on the
+    /// other side, git puts it there and never consults the heuristic — the
+    /// two changes read as one replacement instead of two unrelated hunks.
+    #[test]
+    fn a_slide_that_can_meet_the_other_sides_change_is_aligned_with_it() {
+        let old = "a\nb\nX\na\nb\nz\n";
+        let new = "a\nb\na\nb\na\nb\nz\n";
+        assert_eq!(
+            render(&line_diff(old, new)),
+            vec![
+                ("context", Some(1), Some(1), "a"),
+                ("context", Some(2), Some(2), "b"),
+                ("del", Some(3), None, "X"),
+                ("add", None, Some(3), "a"),
+                ("add", None, Some(4), "b"),
+                ("context", Some(4), Some(5), "a"),
+                ("context", Some(5), Some(6), "b"),
+                ("context", Some(6), Some(7), "z"),
+            ]
+        );
     }
 
     #[test]

@@ -111,40 +111,40 @@ Dependencies: none added. `similar = "3.2.0"` stays as the base algorithm.
 **Files:**
 - Modify: `src/core/diff.rs`
 
-- [ ] Reconstruct changed-flag arrays from `similar`'s output: `changed_old[i]` for each
+- [x] Reconstruct changed-flag arrays from `similar`'s output: `changed_old[i]` for each
       `ChangeTag::Delete` at old index `i`, `changed_new[j]` for each `ChangeTag::Insert`
       at new index `j`. Keep the existing `split_inclusive('\n')` tokenization and the
       `\n`-only rationale in the doc comment unchanged.
-- [ ] Port the group cursor (`Group { start, end }`, `group_init`, `group_next`,
+- [x] Port the group cursor (`Group { start, end }`, `group_init`, `group_next`,
       `group_previous`, `group_slide_up`, `group_slide_down`), comparing lines by their
       full slice including the terminator — the same equality `similar` used.
-- [ ] Port `xdl_change_compact` as
+- [x] Port `xdl_change_compact` as
       `compact(lines: &[&str], changed: &mut [bool], other_changed: &[bool])`: the
       up-then-down shift loop until the group size stabilises, `earliest_end` /
       `end_matching_other` bookkeeping, the "align with the other file's group" branch, and
       the indent-heuristic branch with the `earliest_end` / `g.end - groupsize - 1` /
       `g.end - INDENT_HEURISTIC_MAX_SLIDING` lower bound on `shift` and the `<= 0`
       tie-break that prefers the latest best shift.
-- [ ] Call it twice, exactly as git does: once for the old side with the new side as
+- [x] Call it twice, exactly as git does: once for the old side with the new side as
       "other", then once for the new side with the (already updated) old side as "other".
-- [ ] Re-emit `Vec<DiffLine>` from the two flag arrays: at each position emit the maximal
+- [x] Re-emit `Vec<DiffLine>` from the two flag arrays: at each position emit the maximal
       run of changed old lines as `del`, then the maximal run of changed new lines as `add`,
       then one `context` line carrying both numbers. This preserves the existing ordering
       (`del`s before `add`s within a replacement) and the invariant that every line of both
       revisions appears exactly once. Keep `strip_eol` for the text.
-- [ ] Replace the `XDL_BUG` sites with `debug_assert!` plus a release-mode early return
+- [x] Replace the `XDL_BUG` sites with `debug_assert!` plus a release-mode early return
       that leaves the diff in its last consistent state; document why (degradation beats
       failure).
-- [ ] Keep all existing `diff.rs` tests unchanged and green
+- [x] Keep all existing `diff.rs` tests unchanged and green
       (`pure_insertion_numbers_both_sides`, `whole_file_rewrite_replaces_every_line`, the
       slice tests, the CRLF test, …).
-- [ ] Add unit tests on small synthetic strings: a two-line block inserted between two
+- [x] Add unit tests on small synthetic strings: a two-line block inserted between two
       identical `#[test]`-like lines lands *above* the shared line, not below; a group that
       cannot slide is left untouched; a group whose slide is bounded by the start of file
       and one bounded by the end of file; an insertion whose slide range would align it with
       a change on the other side (the `end_matching_other` branch) is placed there rather
       than by the heuristic.
-- [ ] `cargo test` — must pass before Task 3.
+- [x] `cargo test` — must pass before Task 3.
 
 ### Task 3: Slider fixtures and card-level tests (Rust and Swift)
 
