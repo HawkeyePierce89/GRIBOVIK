@@ -157,6 +157,16 @@ export function toFlow(snapshot: GraphSnapshot): {
         // the box of a file it did not change.
         extent: "parent",
         zIndex: CARD_Z,
+        // Unselectable for the same reason as the container below, one step
+        // removed: a card carries a `parentId`, and `getElevatedEdgeZIndex`
+        // gives every edge the higher z of its two endpoints whenever either
+        // one has a parent. So a card left selected in React Flow's store
+        // holds its own edges 1000 above every card they cross. `App` clears
+        // its selection on Escape, on a container and from the file panel,
+        // and none of those three paths touch React Flow's — which would
+        // leave the dismissed card's arrows painted over the graph until some
+        // other card was clicked. Nothing reads React Flow's `selected`.
+        selectable: false,
         data: { snapshot: card, added: counts.added, removed: counts.removed },
       };
     });
@@ -174,6 +184,14 @@ export function toFlow(snapshot: GraphSnapshot): {
       // something else was clicked. `onNodeClick` still fires without this, so
       // clicking a container to dismiss a diff keeps working.
       selectable: false,
+      // A container is the map, and React Flow marks every *draggable* node
+      // `nopan`, which makes its whole box reject the pane's drag filter.
+      // Containers blanket the canvas and most of one is card-free
+      // background, so leaving them draggable means the surface a reviewer
+      // naturally grabs to pan does not pan — it rips that file's box, and
+      // via `extent: "parent"` every card in it, out of the elk layout with
+      // no way back short of a reload. `onNodeClick` fires without this too.
+      draggable: false,
       data: { file, cardCount: cards.length, added, removed },
     });
     nodes.push(...children);

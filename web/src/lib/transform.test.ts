@@ -87,6 +87,7 @@ describe("toFlow", () => {
       parentId: "file:src/a.rs",
       extent: "parent",
       zIndex: CARD_Z,
+      selectable: false,
       data: { snapshot: alpha, added: 1, removed: 0 },
     });
   });
@@ -110,6 +111,7 @@ describe("toFlow", () => {
         position: { x: 0, y: 0 },
         zIndex: CONTAINER_Z,
         selectable: false,
+        draggable: false,
         data: {
           file: "src/a.rs",
           cardCount: 2,
@@ -123,6 +125,7 @@ describe("toFlow", () => {
         position: { x: 0, y: 0 },
         zIndex: CONTAINER_Z,
         selectable: false,
+        draggable: false,
         data: { file: "src/b.rs", cardCount: 1, added: 1, removed: 0 },
       },
     ]);
@@ -130,22 +133,39 @@ describe("toFlow", () => {
 
   // React Flow's `elevateNodesOnSelect` adds 1000 to a selected node's z, and
   // a container is a translucent box elk routes edges through: selecting one
-  // would hide every edge crossing it behind its own panel. Nothing reads
-  // React Flow's `selected`, so the containers opt out of it entirely.
-  it("makes containers unselectable so clicking one cannot elevate it over the edges", () => {
+  // would hide every edge crossing it behind its own panel. A card's stake is
+  // its edges rather than its own box — `getElevatedEdgeZIndex` hands an edge
+  // the higher z of its endpoints as soon as one of them has a parent, and
+  // every card has one — so a card the app has dismissed but React Flow still
+  // holds selected keeps its arrows 1000 above the cards they cross. Nothing
+  // reads React Flow's `selected`, so both kinds opt out of it entirely.
+  it("makes every node unselectable so a stale selection cannot elevate it or its edges", () => {
     const { nodes } = toFlow(
       snapshot({ nodes: [node("src/a.rs::alpha"), node("src/b.rs::beta")] }),
     );
 
-    const containers = nodes.filter((flow) => flow.type === "file");
-    expect(containers).toHaveLength(2);
-    for (const container of containers) {
-      expect(container.selectable).toBe(false);
+    expect(nodes).toHaveLength(4);
+    for (const flow of nodes) {
+      expect(flow.selectable).toBe(false);
     }
-    // Cards keep React Flow's default: they are opaque and are meant to sit
-    // above the edges anyway.
+  });
+
+  // React Flow marks every draggable node `nopan`, and the pane's drag filter
+  // rejects a mousedown anywhere inside one. A container is mostly card-free
+  // background covering most of the canvas, so a draggable one turns the
+  // reviewer's natural panning surface into a way to drag a whole file out of
+  // the layout. Cards stay draggable: they are small, and `extent: "parent"`
+  // keeps a dragged one inside its own file.
+  it("makes containers undraggable so panning from a file's background still pans", () => {
+    const { nodes } = toFlow(
+      snapshot({ nodes: [node("src/a.rs::alpha"), node("src/b.rs::beta")] }),
+    );
+
+    for (const container of nodes.filter((flow) => flow.type === "file")) {
+      expect(container.draggable).toBe(false);
+    }
     for (const card of nodes.filter((flow) => flow.type === "symbol")) {
-      expect(card.selectable).toBeUndefined();
+      expect(card.draggable).toBeUndefined();
     }
   });
 
